@@ -4,7 +4,7 @@ Rust harness for NVIDIA Nemotron Dory 1.0 4B, running on the llama.cpp fork at P
 (https://github.com/ggml-org/llama.cpp/pull/30306, head commit `1c3cdd2`, fork at
 https://github.com/brianchmielNV/llama.cpp). Build the fork first, then point `DORY_LLAMA_DIR` at it
 (the default is `../../../llama.cpp-dory` relative to `crates/dory-sys`).
-The plans are in https://github.com/Gummygamer/dory: `RUST_HARNESS_PLAN.md` and `RUST_HARNESS_FIX_PLAN.md`.
+The plans are in `docs/`: `RUST_HARNESS_PLAN.md` and `RUST_HARNESS_FIX_PLAN.md`.
 
 ## Crates
 

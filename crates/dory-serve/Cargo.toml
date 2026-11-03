@@ -7,6 +7,7 @@ edition = "2024"
 anyhow = "1.0.104"
 axum = "0.8.9"
 clap = { version = "4.6.7", features = ["derive"] }
+dory-agent = { version = "0.1.0", path = "../dory-agent" }
 dory-engine = { version = "0.1.0", path = "../dory-engine" }
 dory-sys = { version = "0.1.0", path = "../dory-sys" }
 futures = "0.3.34"

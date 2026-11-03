@@ -9,7 +9,11 @@ use std::{
     collections::HashMap,
     net::{IpAddr, SocketAddr},
     path::PathBuf,
-    sync::{Arc, Mutex},
+    sync::{
+        Arc, Mutex, OnceLock,
+        atomic::{AtomicU64, Ordering},
+    },
+    time::{SystemTime, UNIX_EPOCH},
 };
 
 use anyhow::{Context as _, Result, bail};
@@ -24,8 +28,9 @@ use axum::{
     routing::{get, post},
 };
 use clap::Parser;
+use dory_agent::tools::sanitize_tool_output;
 use dory_engine::{
-    CacheMode, Engine, EngineOptions, Error as EngineError, Event, Finish, GenParams, LoadOptions,
+    CacheMode, Engine, EngineOptions, Error as EngineError, Event, Finish, GenParams, GenStats, LoadOptions,
     PrefillSchedule,
     chat::{self, Message, ToolCall, ToolDef},
     parse::{Piece, StreamParser},
@@ -35,6 +40,12 @@ use serde::Deserialize;
 use serde_json::{Map, Value, json};
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
+
+/// Request fields this server understands. Any other field is logged, not silently dropped.
+const KNOWN_FIELDS: &[&str] = &[
+    "model", "messages", "tools", "tool_choice", "stream", "stream_options", "max_tokens", "temperature", "top_p",
+    "seed", "chat_template_kwargs", "n", "user",
+];
 
 const DEFAULT_MODEL: &str = "/path/to/drive/models/dory/NVIDIA-Nemotron-Labs-Dory1.0-4B-Q5_K_M.gguf";
 const MODEL_ID: &str = "dory";
@@ -91,6 +102,10 @@ struct ApiRequest {
     top_p: Option<f32>,
     seed: Option<u32>,
     chat_template_kwargs: Option<ApiKwargs>,
+    tool_choice: Option<Value>,
+    n: Option<u32>,
+    #[serde(flatten)]
+    extra: Map<String, Value>,
 }
 
 #[derive(Deserialize)]
@@ -128,6 +143,28 @@ struct ApiFunction {
 #[derive(Deserialize)]
 struct ApiTool {
     function: ApiFunction,
+}
+
+/// A process-wide sequence number for ids, with the start time, so ids stay unique across requests
+/// and across restarts.
+fn next_id(prefix: &str) -> String {
+    static START: OnceLock<u64> = OnceLock::new();
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
+    let start = *START.get_or_init(|| SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0));
+    format!("{prefix}-{start:x}-{:x}", COUNTER.fetch_add(1, Ordering::Relaxed))
+}
+
+fn now_secs() -> u64 {
+    SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
+}
+
+/// The `usage` object OpenAI clients expect.
+fn usage(stats: &GenStats) -> Value {
+    json!({
+        "prompt_tokens": stats.prompt_tokens,
+        "completion_tokens": stats.generated,
+        "total_tokens": stats.prompt_tokens + stats.generated,
+    })
 }
 
 /// Everything a generation needs, owned so it can move into a blocking task.
@@ -189,9 +226,33 @@ fn prepare(req: &ApiRequest, prefill: PrefillSchedule) -> Result<Prepared, ApiEr
     if req.messages.is_empty() {
         return Err(bad("messages must not be empty".into()));
     }
+    if req.n.is_some_and(|n| n != 1) {
+        return Err(bad("n must be 1: one generation per request".into()));
+    }
+    let tools_offered = match &req.tool_choice {
+        None => true,
+        Some(Value::String(s)) if s == "auto" => true,
+        Some(Value::String(s)) if s == "none" => false,
+        Some(Value::String(s)) if s == "required" => {
+            return Err(bad("tool_choice \"required\" is not supported: the server cannot force a tool call".into()));
+        }
+        Some(Value::Object(_)) => {
+            return Err(bad("a named tool_choice is not supported: the server cannot force a tool call".into()));
+        }
+        Some(other) => return Err(bad(format!("unsupported tool_choice {other}"))),
+    };
+    for key in req.extra.keys() {
+        if !KNOWN_FIELDS.contains(&key.as_str()) {
+            tracing::warn!(field = %key, "ignoring a request field this server does not support");
+        }
+    }
     let mut messages = Vec::with_capacity(req.messages.len());
     for m in &req.messages {
-        let content = content_text(&m.content).map_err(bad)?;
+        let mut content = content_text(&m.content).map_err(bad)?;
+        if m.role == "tool" {
+            // Tool output is data: the same neutralizing as the agent applies (see plan step 1).
+            content = sanitize_tool_output(&content);
+        }
         let mut tool_calls = Vec::new();
         for tc in &m.tool_calls {
             tool_calls.push(ToolCall {
@@ -206,15 +267,18 @@ fn prepare(req: &ApiRequest, prefill: PrefillSchedule) -> Result<Prepared, ApiEr
             tool_calls,
         });
     }
-    let tools: Vec<ToolDef> = req
-        .tools
-        .iter()
-        .map(|t| ToolDef {
-            name: t.function.name.clone(),
-            description: t.function.description.clone(),
-            parameters: t.function.parameters.clone(),
-        })
-        .collect();
+    let tools: Vec<ToolDef> = if tools_offered {
+        req.tools
+            .iter()
+            .map(|t| ToolDef {
+                name: t.function.name.clone(),
+                description: t.function.description.clone(),
+                parameters: t.function.parameters.clone(),
+            })
+            .collect()
+    } else {
+        Vec::new()
+    };
     let schemas = tools.iter().map(|t| (t.name.clone(), t.parameters.clone())).collect();
     let thinking = req.chat_template_kwargs.as_ref().and_then(|k| k.enable_thinking).unwrap_or(true);
     let prompt = chat::render(&messages, &tools, thinking).map_err(|e| ApiError::BadRequest(e.to_string()))?;
@@ -238,20 +302,40 @@ fn map_engine_error(e: EngineError) -> ApiError {
     }
 }
 
-/// Runs one generation, calling `on_piece` for each parsed piece. Returns the finish reason.
-fn generate(engine: &Engine, p: &Prepared, mut on_piece: impl FnMut(Piece)) -> Result<Finish, ApiError> {
+/// Runs one generation, calling `on_piece` for each parsed piece. Returns the stats.
+///
+/// `should_stop` is checked between events. When it says stop (the client went away), the loop
+/// ends and the generation is dropped, which cancels it within a token.
+fn generate(
+    engine: &Engine,
+    p: &Prepared,
+    should_stop: impl Fn() -> bool,
+    mut on_piece: impl FnMut(Piece),
+) -> Result<GenStats, ApiError> {
     let tokens = engine.tokenize(&p.prompt, false, true).map_err(map_engine_error)?;
+    let prompt_tokens = tokens.len();
     let mut parser = StreamParser::new(p.thinking, p.schemas.clone());
-    let mut finish = Finish::Stop;
+    let mut stats = None;
     for ev in engine.generate_chat(tokens, p.params.clone()).map_err(map_engine_error)? {
+        if should_stop() {
+            break;
+        }
         match ev.map_err(map_engine_error)? {
             Event::Text(t) => parser.push(&t).into_iter().for_each(&mut on_piece),
             Event::Token { .. } => {}
-            Event::Done(s) => finish = s.finish,
+            Event::Done(s) => stats = Some(s),
         }
     }
     parser.finish().into_iter().for_each(&mut on_piece);
-    Ok(finish)
+    Ok(stats.unwrap_or(GenStats {
+        finish: Finish::Cancelled,
+        prompt_tokens,
+        reused_tokens: 0,
+        chunks: Vec::new(),
+        generated: 0,
+        prompt_ms: 0.0,
+        gen_ms: 0.0,
+    }))
 }
 
 fn finish_reason(finish: Finish, has_calls: bool) -> &'static str {
@@ -282,15 +366,19 @@ async fn blocking_response(state: Arc<AppState>, p: Prepared) -> Response {
         let mut content = String::new();
         let mut reasoning = String::new();
         let mut calls: Vec<Value> = Vec::new();
-        let finish = generate(&engine, &p, |piece| match piece {
+        let mut malformed: Vec<String> = Vec::new();
+        let stats = generate(&engine, &p, || false, |piece| match piece {
             Piece::Reasoning(t) => reasoning.push_str(&t),
             Piece::Content(t) => content.push_str(&t),
             Piece::ToolCall { name, arguments } => calls.push(json!({
-                "id": format!("call_{}", calls.len()),
+                "id": next_id("call"),
                 "type": "function",
                 "function": {"name": name, "arguments": Value::Object(arguments).to_string()},
             })),
-            Piece::MalformedToolCall(raw) => content.push_str(&raw),
+            Piece::MalformedToolCall(raw) => {
+                content.push_str(&raw);
+                malformed.push(raw);
+            }
         })?;
         let mut message = json!({"role": "assistant", "content": content.trim()});
         if !reasoning.trim().is_empty() {
@@ -299,15 +387,21 @@ async fn blocking_response(state: Arc<AppState>, p: Prepared) -> Response {
         if !calls.is_empty() {
             message["tool_calls"] = json!(calls);
         }
+        if !malformed.is_empty() {
+            // Not part of the OpenAI schema: a call the model wrote but the server could not read.
+            message["malformed_tool_calls"] = json!(malformed);
+        }
         Ok(json!({
-            "id": "chatcmpl-dory",
+            "id": next_id("chatcmpl"),
             "object": "chat.completion",
+            "created": now_secs(),
             "model": MODEL_ID,
             "choices": [{
                 "index": 0,
                 "message": message,
-                "finish_reason": finish_reason(finish, !calls.is_empty()),
+                "finish_reason": finish_reason(stats.finish, !calls.is_empty()),
             }],
+            "usage": usage(&stats),
         }))
     })
     .await;
@@ -324,9 +418,13 @@ async fn stream_response(state: Arc<AppState>, p: Prepared) -> Response {
         let send = |v: Value| {
             let _ = tx.blocking_send(v);
         };
+        let id = next_id("chatcmpl");
+        let created = now_secs();
         let chunk = |delta: Value, finish: Option<&str>| {
             json!({
+                "id": id,
                 "object": "chat.completion.chunk",
+                "created": created,
                 "model": MODEL_ID,
                 "choices": [{"index": 0, "delta": delta, "finish_reason": finish}],
             })
@@ -339,14 +437,16 @@ async fn stream_response(state: Arc<AppState>, p: Prepared) -> Response {
             }
         };
         let mut calls = 0usize;
-        let result = generate(&engine, &p, |piece| match piece {
+        // A client that has gone away closes the channel: stop generating.
+        let should_stop = || tx.is_closed();
+        let result = generate(&engine, &p, should_stop, |piece| match piece {
             Piece::Reasoning(t) => send(chunk(json!({"reasoning_content": t}), None)),
             Piece::Content(t) => send(chunk(json!({"content": t}), None)),
             Piece::ToolCall { name, arguments } => {
                 send(chunk(
                     json!({"tool_calls": [{
                         "index": calls,
-                        "id": format!("call_{calls}"),
+                        "id": next_id("call"),
                         "type": "function",
                         "function": {"name": name, "arguments": Value::Object(arguments).to_string()},
                     }]}),
@@ -354,10 +454,16 @@ async fn stream_response(state: Arc<AppState>, p: Prepared) -> Response {
                 ));
                 calls += 1;
             }
-            Piece::MalformedToolCall(raw) => send(chunk(json!({"content": raw}), None)),
+            Piece::MalformedToolCall(raw) => {
+                send(chunk(json!({"content": raw, "malformed_tool_calls": [raw]}), None));
+            }
         });
         match result {
-            Ok(finish) => send(chunk(json!({}), Some(finish_reason(finish, calls > 0)))),
+            Ok(stats) => {
+                let mut last = chunk(json!({}), Some(finish_reason(stats.finish, calls > 0)));
+                last["usage"] = usage(&stats);
+                send(last);
+            }
             Err(ApiError::BadRequest(m)) | Err(ApiError::Internal(m)) => {
                 send(json!({"error": {"message": m}}));
             }

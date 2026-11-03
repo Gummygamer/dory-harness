@@ -26,6 +26,12 @@ The plans are in `docs/`: `RUST_HARNESS_PLAN.md`, `RUST_HARNESS_FIX_PLAN.md` and
     target/release/dory-cli --tools examples/tools.json chat
     target/release/dory-serve --ctx 4096 --port 8080
 
+Versions bump themselves: `dory-cli --version` and `dory-serve --version` (also `dory-cli info`) print
+`MAJOR.MINOR.COMMITS+HASH`, e.g. `0.1.19+d70498f`. MAJOR.MINOR come from the crate version in `Cargo.toml`
+(change them by hand for a release); COMMITS is the commit count on HEAD, so every commit raises it with no
+file edits. A `.dirty` suffix means uncommitted changes to tracked files. Without git it falls back to the
+`Cargo.toml` version plus `+nogit`. The logic is in `build_version.rs`.
+
 Both binaries read the model from `--model` or the `DORY_MODEL` environment variable, so set
 `DORY_MODEL=/path/to/NVIDIA-Nemotron-Labs-Dory1.0-4B-Q5_K_M.gguf` once. The GPU tests and
 `scripts/loop_matrix.sh` (which also needs `LLAMA_SERVER`) use the same variables.

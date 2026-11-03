@@ -50,7 +50,7 @@ const KNOWN_FIELDS: &[&str] = &[
 const MODEL_ID: &str = "dory";
 
 #[derive(Parser)]
-#[command(name = "dory-serve", about = "OpenAI-style chat endpoint for Nemotron Dory (local)")]
+#[command(name = "dory-serve", version = env!("DORY_VERSION"), about = "OpenAI-style chat endpoint for Nemotron Dory (local)")]
 struct Args {
     /// Path to the GGUF file (its SHA-256 must match the pin). Defaults to $DORY_MODEL.
     #[arg(long, env = "DORY_MODEL")]

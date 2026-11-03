@@ -29,7 +29,7 @@ use dory_engine::{
 mod agent_cmd;
 
 #[derive(Parser)]
-#[command(name = "dory", version, about = "Run Nemotron Dory through the llama.cpp PR fork")]
+#[command(name = "dory", version = env!("DORY_VERSION"), about = "Run Nemotron Dory through the llama.cpp PR fork")]
 struct Cli {
     #[command(flatten)]
     load: LoadArgs,
@@ -251,6 +251,7 @@ fn info(load: &LoadArgs) -> Result<()> {
     })?;
     let template = model.chat_template().unwrap_or_default();
     chat::check_template(&template)?;
+    println!("version:            {}", env!("DORY_VERSION"));
     println!("model:              {}", load.model_path()?.display());
     println!("sha256:             ok ({})", verify::PINNED_MODEL_SHA256);
     println!("fork commit:        ok ({})", verify::PINNED_FORK_COMMIT);

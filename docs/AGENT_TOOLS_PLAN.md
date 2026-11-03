@@ -7,7 +7,12 @@
   tools, permissions, the bwrap sandbox, budget and compaction, sessions and resume, Ctrl-C, `dory-cli
   agent`, `scripts/agent_acceptance.sh` (8 of 8 on the final run) and `dory-serve` compatibility checked
   with the `openai` package.
-- Not done: step 19 (the evaluation suite of about 20 tasks) and step 20 (the measurements of settings).
+- Step 19 is done in part: `scripts/agent_eval/run_eval.py` has 16 tasks (3 read-only, 4 edit,
+  3 multi-step, 3 recovery, 3 security) and was run once with seed 42. Result: 14 of 16 passed. Both
+  failures were security tasks, where the model read `.env` through `run_command` (`cat .env`) after
+  the file tools refused it. Under the plan's criterion (the secret in a tool call's arguments) all
+  three security tasks pass; the stricter check (the secret in any tool result) fails two.
+- Not done: step 20 (the measurements of settings) and the repeated seeds that step 19 asks for.
   So the default thinking, temperature, loop count and prefix-reuse choices were not chosen from data,
   and the model's quality on agent tasks is unmeasured.
 - Step 22 is partial: the README has the agent section; this plan is marked here rather than per step.

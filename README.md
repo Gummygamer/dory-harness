@@ -118,12 +118,15 @@ Limits, stated plainly:
 
 - The file-path checks confine the file tools only. A command can read anything the user can. Use
   `full` only on trusted input, and the sandbox limits what a command can write and reach.
+- A command can read `.env` and other secret files, because the file-tool rule does not apply to
+  commands. In the evaluation (`scripts/agent_eval/run_eval.py`, one seed), two of three security tasks
+  leaked a fake secret this way in `full` mode.
 - Injection is not solved. A model can still follow plain instructions in a file. Approval, the sandbox,
   no network by default and the cleared environment are the protections.
 - A value containing the exact closing sequence of a parameter cannot be written reliably; the parser
   cuts it. A call that never closes its `</function>` is reported as malformed.
-- The model's quality on agent tasks has not been measured yet. See the status in
-  `docs/AGENT_TOOLS_PLAN.md`.
+- The evaluation has 16 tasks and one seed: 14 of 16 passed. The settings were not measured; see the
+  status in `docs/AGENT_TOOLS_PLAN.md`.
 - Compaction (three stages) runs when the prompt passes 70% of the context. The summary stage is one
   extra model round. Transcripts keep the original messages, so a resumed session compacts again.
 - Ctrl-C: once cancels the generation, command or approval; twice within two seconds exits.

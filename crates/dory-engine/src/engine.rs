@@ -142,9 +142,32 @@ pub struct Generation {
     finished: bool,
 }
 
+/// Cancels one generation from any thread, including while it is being iterated.
+#[derive(Clone, Debug)]
+pub struct CancelHandle(Arc<AtomicBool>);
+
+impl CancelHandle {
+    /// Stops after the current token (or prefill chunk). A `Done` event with `Finish::Cancelled` follows.
+    pub fn cancel(&self) {
+        self.0.store(true, Ordering::Relaxed);
+    }
+}
+
 impl Generation {
     /// Stops after the current token. A `Done` event with `Finish::Cancelled` follows.
     pub fn cancel(&self) {
+        self.cancel.store(true, Ordering::Relaxed);
+    }
+
+    pub fn cancel_handle(&self) -> CancelHandle {
+        CancelHandle(self.cancel.clone())
+    }
+}
+
+/// Dropping a generation cancels it, so the worker stops within one token instead of running
+/// to `max_tokens` and blocking the next request.
+impl Drop for Generation {
+    fn drop(&mut self) {
         self.cancel.store(true, Ordering::Relaxed);
     }
 }
@@ -410,13 +433,32 @@ impl Worker {
         );
         let t0 = Instant::now();
         let mut at = reused;
+        let mut decoded = Vec::with_capacity(chunks.len());
         for &size in &chunks {
+            if cancel.load(Ordering::Relaxed) {
+                break;
+            }
             let part = &prompt[at..at + size];
             self.ctx.decode(part)?;
             self.kv.extend_from_slice(part);
             at += size;
+            decoded.push(size);
         }
         let prompt_ms = t0.elapsed().as_secs_f64() * 1e3;
+        if decoded.len() < chunks.len() {
+            // Cancelled during prefill. The cache holds exactly the tokens decoded so far.
+            let stats = GenStats {
+                finish: Finish::Cancelled,
+                prompt_tokens: prompt.len(),
+                reused_tokens: reused,
+                chunks: decoded,
+                generated: 0,
+                prompt_ms,
+                gen_ms: 0.0,
+            };
+            let _ = events.send(Ok(Event::Done(stats)));
+            return Ok(());
+        }
 
         let sampler = Sampler::new(params);
         let mut utf8 = Utf8Stream::default();
@@ -439,11 +481,14 @@ impl Worker {
             }
             if params.top_logprobs > 0 {
                 let (logprob, top) = token_probs(self.ctx.last_logits(), tok, params.top_logprobs as usize);
-                let _ = events.send(Ok(Event::Token { id: tok, logprob, top }));
+                if events.send(Ok(Event::Token { id: tok, logprob, top })).is_err() {
+                    break Finish::Cancelled;
+                }
             }
             let text = utf8.push(&self.piece(tok));
-            if !text.is_empty() {
-                let _ = events.send(Ok(Event::Text(text)));
+            if !text.is_empty() && events.send(Ok(Event::Text(text))).is_err() {
+                // The caller dropped the stream: stop before this token enters the cache.
+                break Finish::Cancelled;
             }
             self.ctx.decode(&[tok])?;
             self.kv.push(tok);
@@ -457,7 +502,7 @@ impl Worker {
             finish,
             prompt_tokens: prompt.len(),
             reused_tokens: reused,
-            chunks,
+            chunks: decoded,
             generated,
             prompt_ms,
             gen_ms: t1.elapsed().as_secs_f64() * 1e3,
@@ -488,8 +533,12 @@ impl Worker {
         Ok(written)
     }
 
+    /// Replaces the cache with the one in `path`. The cache is cleared before the load, not after:
+    /// clearing after would discard the restored state while `kv` still claimed it was there.
     fn load_session(&mut self, path: &str) -> Result<usize> {
         let cpath = CString::new(path).map_err(|_| Error::Session("path contains NUL".into()))?;
+        self.ctx.clear_kv();
+        self.kv.clear();
         let cap = self.ctx.n_ctx() as usize;
         let mut tokens = vec![0i32; cap];
         let mut count = 0usize;
@@ -497,10 +546,10 @@ impl Worker {
             sys::llama_state_seq_load_file(self.ctx.as_ptr(), cpath.as_ptr(), 0, tokens.as_mut_ptr(), cap, &mut count)
         };
         if ok == 0 {
+            self.ctx.clear_kv();
             return Err(Error::Session(format!("could not read {path}")));
         }
         tokens.truncate(count);
-        self.ctx.clear_kv();
         self.kv = tokens;
         Ok(self.kv.len())
     }

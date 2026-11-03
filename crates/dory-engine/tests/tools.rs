@@ -62,3 +62,17 @@ fn tools_file_loads_and_exposes_definitions_without_exec() {
     assert_eq!(defs[0].name, "t");
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn failing_command_reports_exit_code_and_stderr() {
+    let tools = ToolSet {
+        entries: vec![ToolEntry {
+            name: "fails".into(),
+            description: None,
+            parameters: json!({"type": "object", "properties": {}}),
+            exec: Some(vec!["sh".into(), "-c".into(), "echo partial; echo bad >&2; exit 2".into()]),
+        }],
+    };
+    let out = tools.call("fails", &args(json!({})));
+    assert_eq!(out, "partial\n[stderr]\nbad\n[exit 2]");
+}

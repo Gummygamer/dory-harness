@@ -15,6 +15,7 @@ pub mod log;
 pub mod model;
 pub mod parse;
 pub mod prefill;
+pub mod process;
 pub mod tools;
 pub mod verify;
 

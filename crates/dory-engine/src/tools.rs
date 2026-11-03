@@ -5,12 +5,7 @@
 //! The model's arguments are sent as JSON on the command's stdin. Stdout is returned to the
 //! model. Nothing else is ever executed, and calls to unknown tools are refused.
 
-use std::{
-    io::{Read, Write},
-    path::Path,
-    process::{Command, Stdio},
-    time::{Duration, Instant},
-};
+use std::{path::Path, time::Duration};
 
 use serde::Deserialize;
 use serde_json::{Map, Value};
@@ -18,6 +13,7 @@ use serde_json::{Map, Value};
 use crate::{
     chat::ToolDef,
     error::{Error, Result},
+    process::{ProcessResult, ProcessSpec, run_process},
 };
 
 const TIMEOUT: Duration = Duration::from_secs(10);
@@ -132,39 +128,41 @@ impl ToolSet {
         check_required(entry, args)?;
 
         let input = serde_json::to_vec(args).map_err(|e| Error::Tool(e.to_string()))?;
-        let mut child = Command::new(&argv[0])
-            .args(&argv[1..])
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::null())
-            .spawn()
-            .map_err(|e| Error::Tool(format!("cannot start {}: {e}", argv[0])))?;
-        if let Some(mut stdin) = child.stdin.take() {
-            let _ = stdin.write_all(&input);
+        let spec = ProcessSpec { argv, stdin: &input, cwd: None, env: None, timeout: TIMEOUT, limit: MAX_OUTPUT };
+        let result = run_process(&spec).map_err(|e| Error::Tool(format!("cannot start {}: {e}", argv[0])))?;
+        if result.timed_out {
+            return Err(Error::Tool(format!("'{name}' timed out after {}s", TIMEOUT.as_secs())));
         }
-        let mut stdout = child.stdout.take().ok_or_else(|| Error::Tool("no stdout".into()))?;
-        let reader = std::thread::spawn(move || {
-            let mut buf = Vec::new();
-            let _ = stdout.read_to_end(&mut buf);
-            buf
-        });
-
-        let start = Instant::now();
-        loop {
-            match child.try_wait().map_err(|e| Error::Tool(e.to_string()))? {
-                Some(_) => break,
-                None if start.elapsed() > TIMEOUT => {
-                    let _ = child.kill();
-                    let _ = child.wait();
-                    return Err(Error::Tool(format!("'{name}' timed out after {}s", TIMEOUT.as_secs())));
-                }
-                None => std::thread::sleep(Duration::from_millis(20)),
-            }
-        }
-        let mut out = reader.join().unwrap_or_default();
-        out.truncate(MAX_OUTPUT);
-        Ok(String::from_utf8_lossy(&out).trim_end().to_string())
+        Ok(render_output(&result))
     }
+}
+
+/// Formats a finished process for the model: stdout first, then anything that went wrong.
+/// A clean run with only stdout comes out as just that stdout.
+pub fn render_output(r: &ProcessResult) -> String {
+    let mut out = String::from_utf8_lossy(&r.stdout).trim_end().to_string();
+    let stderr = String::from_utf8_lossy(&r.stderr);
+    let stderr = stderr.trim_end();
+    if !stderr.is_empty() {
+        out.push_str("\n[stderr]\n");
+        out.push_str(stderr);
+    }
+    match (r.code, r.signal) {
+        (Some(0), _) => {}
+        (Some(code), _) => out.push_str(&format!("\n[exit {code}]")),
+        (None, Some(sig)) => out.push_str(&format!("\n[killed by signal {sig}]")),
+        (None, None) => out.push_str("\n[no exit status]"),
+    }
+    if r.orphans_killed {
+        out.push_str("\n[background processes started by the command were killed]");
+    }
+    if r.pipes_abandoned {
+        out.push_str("\n[some output was lost: the output pipes stayed open]");
+    }
+    if r.truncated {
+        out.push_str("\n[output truncated]");
+    }
+    out
 }
 
 fn check_required(entry: &ToolEntry, args: &Map<String, Value>) -> Result<()> {

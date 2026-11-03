@@ -1,0 +1,50 @@
+[
+  {
+    "keywords": ["quillfeed", "retry_after", "release", "added", "option"],
+    "title": "Quillfeed changelog",
+    "url": "https://quillfeed.example/changelog",
+    "content": "3.4.0: added the retry_after option to the client, so callers can wait the server-given time before retrying. 3.3.1: fixed a crash on empty batches."
+  },
+  {
+    "keywords": ["quillfeed", "install", "python", "requirements"],
+    "title": "Quillfeed installation",
+    "url": "https://quillfeed.example/install",
+    "content": "Install with pip install quillfeed. Quillfeed needs Python 3.10 or newer."
+  },
+  {
+    "keywords": ["vexmap", "timeout", "default", "client", "seconds"],
+    "title": "Vexmap client reference",
+    "url": "https://vexmap.example/docs/client",
+    "content": "The Vexmap client waits 17 seconds by default before a request times out. Set timeout= to change it."
+  },
+  {
+    "keywords": ["gravel", "rate", "limit", "error", "code"],
+    "title": "Gravel API errors",
+    "url": "https://gravel.example/docs/errors",
+    "content": "When a rate limit is hit, the Gravel API returns error code GRAVEL_E17 with HTTP status 429. Wait for the Retry-After header before retrying."
+  },
+  {
+    "keywords": ["pellmark", "maintainer", "maintained", "project", "owner"],
+    "title": "Pellmark project page",
+    "url": "https://pellmark.example/about",
+    "content": "Pellmark is maintained by the Tessaly collective, a group of volunteers who review patches each week."
+  },
+  {
+    "keywords": ["pellmark", "python", "dropped", "support", "release"],
+    "title": "Pellmark release notes",
+    "url": "https://pellmark.example/releases",
+    "content": "2.2.0 dropped support for Python 3.8. 2.1.0 added the --strict flag."
+  },
+  {
+    "keywords": ["python", "release", "features", "version", "news"],
+    "title": "Python 3.13 release notes",
+    "url": "https://python.example/3.13",
+    "content": "Python 3.13 adds an experimental free-threaded build and a new REPL. It is not related to any third-party library."
+  },
+  {
+    "keywords": ["serde", "preserve_order", "feature", "indexmap", "json"],
+    "title": "serde_json features",
+    "url": "https://serde.example/json/features",
+    "content": "The preserve_order feature keeps map keys in insertion order by using an IndexMap. The feature was added in release 1.0.79."
+  }
+]

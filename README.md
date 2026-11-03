@@ -4,14 +4,16 @@ Rust harness for NVIDIA Nemotron Dory 1.0 4B, running on the llama.cpp fork at P
 (https://github.com/ggml-org/llama.cpp/pull/30306, head commit `1c3cdd2`, fork at
 https://github.com/brianchmielNV/llama.cpp). Build the fork first, then point `DORY_LLAMA_DIR` at it
 (the default is `../../../llama.cpp-dory` relative to `crates/dory-sys`).
-The plans are in `docs/`: `RUST_HARNESS_PLAN.md` and `RUST_HARNESS_FIX_PLAN.md`.
+The plans are in `docs/`: `RUST_HARNESS_PLAN.md`, `RUST_HARNESS_FIX_PLAN.md` and `AGENT_TOOLS_PLAN.md`.
 
 ## Crates
 
 - `dory-sys`: bindgen bindings to `include/llama.h`, linked to the fork's `libllama.so`.
 - `dory-engine`: checksum and commit pins, RAII model/context, worker-thread engine, prefill schedule,
   chat renderer, streaming parser, tool allowlist, token logprobs.
-- `dory-cli`: `dory info | template | run | chat | raw | bench`. `raw --chat-turn` uses the chat endpoint's
+- `dory-agent`: the agent loop, built-in file and command tools, permissions, the `bwrap` sandbox, compaction
+  and session transcripts. It never prints; front ends render its events.
+- `dory-cli`: `dory info | template | run | chat | raw | bench | agent`. `raw --chat-turn` uses the chat endpoint's
   prefill breaks.
 - `dory-serve`: optional OpenAI-style `/v1/chat/completions` (streaming, tool calls returned to the
   client, one generation at a time). Binds to loopback unless `--allow-remote` is given.
@@ -79,3 +81,71 @@ Earlier: a 25,954-token prompt answered correctly, and a 74,054-token prompt was
 - The server's `/v1/chat/completions` and `/completion` replies can differ for the same prompt under default
   settings, because the chat endpoint breaks its prefill at user messages. The harness reproduces each one:
   `raw` for `/completion`, `raw --chat-turn` for the chat endpoint.
+
+## Agent
+
+`dory-cli agent` lets the model read and change files and run commands in a project folder. Reads
+inside the folder are automatic. Writes and commands ask first, unless a permission mode or an
+`--allow-command` rule allows them.
+
+    target/release/dory-cli agent "What does src/parser.rs do?" --workspace .
+    target/release/dory-cli agent "Fix the failing test" --workspace ../app --permission auto-edit \
+        --allow-command "python3 -m unittest"
+    target/release/dory-cli agent --workspace ../app          # interactive session
+    target/release/dory-cli agent --resume SESSION_ID --workspace ../app
+
+Permission modes:
+
+| Mode | Read | Write in the project | Commands |
+|---|---|---|---|
+| `read-only` | allowed | refused | refused |
+| `ask` (default) | allowed | asks | asks, unless `--allow-command` matches |
+| `auto-edit` | allowed | allowed | asks, unless `--allow-command` matches |
+| `full` | allowed | allowed | allowed, sandboxed (refused without a sandbox unless `--sandbox none`) |
+
+Asking reads `/dev/tty`, not stdin. With no terminal, a call that needs a yes is refused, and the
+model is told why. `--allow-command` matches a program and an argument prefix. A command containing
+`;`, `&`, `|`, `<`, `>`, a backtick, `$(`, `${` or a newline never matches.
+
+Sandbox: `--sandbox auto` (default) runs commands under `bwrap` when it works here. The root is
+read-only, the project is writable, `/tmp` is private, `~/.ssh`, `~/.aws` and `~/.gnupg` are hidden,
+the environment is cleared apart from a short allowlist plus `--env NAME`, and there is no network
+unless `--network` is given. `--writable DIR` adds a writable folder, for example a cargo registry.
+`--sandbox none` runs commands unconfined. Without bwrap, `auto` falls back to unconfined with a
+warning, and `full` mode refuses.
+
+Limits, stated plainly:
+
+- The file-path checks confine the file tools only. A command can read anything the user can. Use
+  `full` only on trusted input, and the sandbox limits what a command can write and reach.
+- Injection is not solved. A model can still follow plain instructions in a file. Approval, the sandbox,
+  no network by default and the cleared environment are the protections.
+- A value containing the exact closing sequence of a parameter cannot be written reliably; the parser
+  cuts it. A call that never closes its `</function>` is reported as malformed.
+- The model's quality on agent tasks has not been measured yet. See the status in
+  `docs/AGENT_TOOLS_PLAN.md`.
+- Compaction (three stages) runs when the prompt passes 70% of the context. The summary stage is one
+  extra model round. Transcripts keep the original messages, so a resumed session compacts again.
+- Ctrl-C: once cancels the generation, command or approval; twice within two seconds exits.
+- The approval prompt has no timeout. Answer it, or Ctrl-C it.
+
+Sessions live in `<project>/.dory/sessions/<id>/transcript.jsonl` (one JSON line per message, round
+and end reason, flushed as written). `--resume` rebuilds the conversation. A tool call whose result
+was never written is marked "outcome unknown" and is not run again.
+
+`--json` writes one event per line on stdout, schema version 1:
+`session`, `reasoning`, `content`, `tool_call`, `malformed_call`, `tool_result`, `compacted`, and a final
+`finished` line with `reason`, `rounds`, `tool_calls`, `prompt_tokens`, `generated_tokens` and `session`.
+
+Exit codes: `0` answered, `1` runtime error or the model could not finish (malformed calls, empty
+answers, repeated calls, a length cut that could not be kept), `3` a limit was reached (rounds, time
+or context), `4` cancelled.
+
+`dory-serve` never runs tools. It returns calls to the client and supports `tool_choice` `auto` and
+`none` (`required` and named choices return 400, since nothing can force a call).
+
+Checks: `scripts/agent_acceptance.sh` runs eight end-to-end cases on fixture projects and checks the
+files and JSON events they produce. Last result: 8 of 8 on the final run (one earlier run had one
+stalled case, `fix_failing_test`, which passed on re-run; the cause of the stall is not known).
+`scripts/serve_openai_check.py` checks `dory-serve` with the `openai` Python package, which needs
+a venv under `target/`.

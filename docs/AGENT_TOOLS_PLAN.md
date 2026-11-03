@@ -2,7 +2,18 @@
 
 **Written:** 2026-11-02. Follows `RUST_HARNESS_PLAN.md` and `RUST_HARNESS_FIX_PLAN.md`.
 
-**Status:** Not started.
+**Status (2026-11-02):** Partly done.
+- Steps 1–18 and 21 are implemented and tested: the loop, every round outcome, the file and command
+  tools, permissions, the bwrap sandbox, budget and compaction, sessions and resume, Ctrl-C, `dory-cli
+  agent`, `scripts/agent_acceptance.sh` (8 of 8 on the final run) and `dory-serve` compatibility checked
+  with the `openai` package.
+- Not done: step 19 (the evaluation suite of about 20 tasks) and step 20 (the measurements of settings).
+  So the default thinking, temperature, loop count and prefix-reuse choices were not chosen from data,
+  and the model's quality on agent tasks is unmeasured.
+- Step 22 is partial: the README has the agent section; this plan is marked here rather than per step.
+- Deviations: steps 6–17 landed as one commit. The `dory-cli agent` REPL's `/compact` is implemented.
+  `write_file` cannot refuse content with the exact closing sequence (the parser cuts it first).
+  Step 14's summary is one extra model round. One acceptance case stalled once, cause unknown.
 
 **Goal:** `dory-cli agent "fix the failing test"` can read and search the project, edit files and run commands, under permission rules, until the task is done or a limit stops it. It also runs unattended for scripted workflows.
 

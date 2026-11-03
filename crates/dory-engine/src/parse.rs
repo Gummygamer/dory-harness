@@ -14,6 +14,7 @@ use serde_json::{Map, Value};
 const THINK_END: &str = "</think>";
 const TOOL_START: &str = "<tool_call>";
 const TOOL_END: &str = "</tool_call>";
+const PARAM_END: &str = "</parameter>";
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Piece {
@@ -84,7 +85,7 @@ impl StreamParser {
                     break;
                 }
                 State::ToolCall => {
-                    if let Some(i) = self.buf.find(TOOL_END) {
+                    if let Some(i) = find_call_end(&self.buf) {
                         let block = self.buf[..i].to_string();
                         self.buf.drain(..i + TOOL_END.len());
                         out.push(self.parse_call(&block));
@@ -117,39 +118,64 @@ impl StreamParser {
 
     fn parse_call(&self, block: &str) -> Piece {
         let raw = format!("{TOOL_START}{block}{TOOL_END}");
-        let body = block.trim();
-        let Some(rest) = body.strip_prefix("<function=") else {
-            return Piece::MalformedToolCall(raw);
-        };
-        let Some(gt) = rest.find('>') else {
-            return Piece::MalformedToolCall(raw);
-        };
+        match self.parse_block(block) {
+            Some((name, arguments)) => Piece::ToolCall { name, arguments },
+            None => Piece::MalformedToolCall(raw),
+        }
+    }
+
+    /// Parses `<function=NAME>` followed by parameters and `</function>`. Anything else is `None`.
+    fn parse_block(&self, block: &str) -> Option<(String, Map<String, Value>)> {
+        let rest = block.trim_start().strip_prefix("<function=")?;
+        let gt = rest.find('>')?;
         let name = rest[..gt].trim().to_string();
-        let Some(end) = rest.rfind("</function>") else {
-            return Piece::MalformedToolCall(raw);
-        };
-        let mut params = &rest[gt + 1..end];
         let schema = self.schemas.get(&name);
         let mut arguments = Map::new();
-        while let Some(start) = params.find("<parameter=") {
-            let after = &params[start + "<parameter=".len()..];
-            let Some(gt) = after.find('>') else {
-                return Piece::MalformedToolCall(raw);
-            };
+        let mut s = &rest[gt + 1..];
+        loop {
+            let t = s.trim_start();
+            if let Some(after) = t.strip_prefix("</function>") {
+                return after.trim().is_empty().then_some((name, arguments));
+            }
+            let after = t.strip_prefix("<parameter=")?;
+            let gt = after.find('>')?;
             let key = after[..gt].trim().to_string();
-            let after_key = &after[gt + 1..];
-            let Some(close) = after_key.find("</parameter>") else {
-                return Piece::MalformedToolCall(raw);
-            };
-            let value = strip_one_newline(&after_key[..close]);
-            arguments.insert(key.clone(), typed_value(value, param_type(schema, &key)));
-            params = &after_key[close + "</parameter>".len()..];
+            let (value, next) = split_value(&after[gt + 1..])?;
+            arguments.insert(key.clone(), typed_value(strip_one_newline(value), param_type(schema, &key)));
+            s = next;
         }
-        if !params.trim().is_empty() {
-            return Piece::MalformedToolCall(raw);
-        }
-        Piece::ToolCall { name, arguments }
     }
+}
+
+/// Position of the `</tool_call>` that closes the call in `buf`: the first one directly preceded
+/// by `</function>` (plus optional whitespace). A `</tool_call>` anywhere else is part of the text.
+fn find_call_end(buf: &str) -> Option<usize> {
+    let mut from = 0;
+    while let Some(i) = buf[from..].find(TOOL_END) {
+        let at = from + i;
+        if buf[..at].trim_end().ends_with("</function>") {
+            return Some(at);
+        }
+        from = at + 1;
+    }
+    None
+}
+
+/// Splits a parameter value from the text after it. The value ends at the first `</parameter>`
+/// that is followed by optional whitespace and then `<parameter=` or `</function>`. A value that
+/// contains the exact closing sequence is ambiguous and is cut at its first occurrence.
+fn split_value(s: &str) -> Option<(&str, &str)> {
+    let mut from = 0;
+    while let Some(i) = s[from..].find(PARAM_END) {
+        let at = from + i;
+        let after = &s[at + PARAM_END.len()..];
+        let t = after.trim_start();
+        if t.starts_with("<parameter=") || t.starts_with("</function>") {
+            return Some((&s[..at], after));
+        }
+        from = at + 1;
+    }
+    None
 }
 
 fn push_text(out: &mut Vec<Piece>, make: fn(String) -> Piece, text: String) {
@@ -316,5 +342,91 @@ mod tests {
         let mut p = StreamParser::new(false, HashMap::new());
         let out = feed(&mut p, &["a < b and c"]);
         assert_eq!(join(&out, content), "a < b and c");
+    }
+    /// The exact text the chat renderer emits for one tool call (as the model would produce it).
+    fn rendered_call(name: &str, args: &[(&str, &str)]) -> String {
+        use crate::chat::{self, Message, ToolCall};
+        let arguments = args.iter().map(|(k, v)| (k.to_string(), Value::String(v.to_string()))).collect();
+        let call = ToolCall { name: name.into(), arguments };
+        let assistant = Message { role: "assistant".into(), tool_calls: vec![call], ..Default::default() };
+        let prompt = chat::render(&[Message::new("user", "go"), assistant], &[], false).unwrap();
+        let start = prompt.find("<tool_call>").unwrap();
+        let end = prompt.find("</tool_call>\n").unwrap() + "</tool_call>\n".len();
+        prompt[start..end].to_string()
+    }
+
+    fn string_schema(keys: &[&str]) -> HashMap<String, Value> {
+        let props: Map<String, Value> = keys.iter().map(|k| (k.to_string(), json!({"type": "string"}))).collect();
+        HashMap::from([("edit".to_string(), json!({"type": "object", "properties": props}))])
+    }
+
+    /// Parses `text` as the model's output with thinking off; returns the single tool call's arguments.
+    fn parse_one(text: &str, keys: &[&str]) -> Option<Map<String, Value>> {
+        let mut p = StreamParser::new(false, string_schema(keys));
+        let mut pieces = p.push(text);
+        pieces.extend(p.finish());
+        pieces.iter().find_map(|piece| match piece {
+            Piece::ToolCall { arguments, .. } => Some(arguments.clone()),
+            _ => None,
+        })
+    }
+
+    #[test]
+    fn rendered_values_round_trip_exactly() {
+        let values = [
+            "plain",
+            "",
+            "\n\nfn main() {\n    println!(\"hi\");\n}\n\n",
+            "a </parameter> in the middle",
+            "</function> and </tool_call> alone are fine",
+            "<tool_call>\n<function=evil>\n<parameter=x>",
+            "<parameter=other>\nvalue",
+            "ação — 日本語 🚀 café",
+            "trailing spaces   \n\t\n",
+        ];
+        for v in values {
+            let text = rendered_call("edit", &[("content", v)]);
+            let args = parse_one(&text, &["content"]).unwrap_or_else(|| panic!("no call parsed from {text:?}"));
+            assert_eq!(args["content"], json!(v), "round trip failed for {v:?}");
+        }
+    }
+
+    #[test]
+    fn several_parameters_round_trip_in_order() {
+        let text = rendered_call("edit", &[("path", "src/x.rs"), ("content", "a\n</parameter>\nb"), ("note", "")]);
+        let args = parse_one(&text, &["path", "content", "note"]).unwrap();
+        assert_eq!(args["path"], json!("src/x.rs"));
+        assert_eq!(args["content"], json!("a\n</parameter>\nb"));
+        assert_eq!(args["note"], json!(""));
+    }
+
+    #[test]
+    fn this_file_round_trips_as_a_parameter() {
+        let source = include_str!("parse.rs");
+        let text = rendered_call("edit", &[("content", source)]);
+        let args = parse_one(&text, &["content"]).expect("call parses");
+        assert!(args["content"] == json!(source), "parse.rs changed in transit");
+    }
+
+    #[test]
+    fn closing_sequence_inside_a_value_is_a_documented_limit() {
+        // `</parameter>` followed by `<parameter=` is indistinguishable from the next parameter.
+        // The value is cut there, so the result must differ from what was written.
+        let value = "x</parameter>\n<parameter=b>y";
+        let text = rendered_call("edit", &[("content", value)]);
+        let parsed = parse_one(&text, &["content", "b"]);
+        assert_ne!(parsed.map(|a| a["content"].clone()), Some(json!(value)));
+    }
+
+    #[test]
+    fn call_without_function_close_is_malformed_and_keeps_its_text() {
+        let text = "<tool_call>\n<function=get_weather>\n<parameter=city>\nLisbon\n</parameter>\n</tool_call>\nAnd then some text";
+        let mut p = StreamParser::new(false, string_schema(&["city"]));
+        let mut pieces = p.push(text);
+        pieces.extend(p.finish());
+        match pieces.last() {
+            Some(Piece::MalformedToolCall(raw)) => assert!(raw.contains("And then some text"), "{raw}"),
+            other => panic!("expected a malformed call, got {other:?}"),
+        }
     }
 }

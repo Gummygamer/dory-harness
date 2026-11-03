@@ -21,6 +21,7 @@ pub mod session;
 pub mod scripted;
 pub mod tool;
 pub mod tools;
+pub mod web;
 pub mod workspace;
 
 pub use agent::{Agent, AgentConfig, AgentEvent, Reason, TurnReport};

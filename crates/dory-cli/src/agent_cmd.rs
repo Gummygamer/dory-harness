@@ -21,13 +21,14 @@ use clap::Args;
 use dory_agent::{
     Agent, AgentConfig, AgentEvent, Reason, Registry, TurnReport,
     backend::EngineBackend,
-    builtin::{command::RunCommand, read_tools, write_tools},
+    builtin::{command::RunCommand, read_tools, web::{DEFAULT_SEARCHES_PER_TASK, WebSearch, secret_values}, write_tools},
     policy::{CommandRules, Mode, Permissions, Policy, TerminalApprover},
     prompt,
     sandbox::{SandboxConfig, SandboxMode},
     session::Session,
     tool::ToolCtx,
     tools::ToolSet,
+    web::{Brave, SearchProvider, Tavily, state},
     workspace::Workspace,
 };
 use dory_engine::{CacheMode, Engine, chat::Message, verify};
@@ -89,6 +90,63 @@ pub struct AgentArgs {
     /// Show full tool output on stderr instead of the first 200 characters.
     #[arg(long)]
     verbose: bool,
+    /// Turns web search off, even when a key is set.
+    #[arg(long)]
+    no_web: bool,
+    /// The search service: tavily (default) or brave. Each reads its own key variable.
+    #[arg(long, default_value = "tavily")]
+    web_search: String,
+    /// Web searches run without asking, in any permission mode.
+    #[arg(long)]
+    allow_web: bool,
+    /// Searches one task may start.
+    #[arg(long, default_value_t = DEFAULT_SEARCHES_PER_TASK)]
+    web_max_searches: usize,
+}
+
+/// The search services. The key is read from the environment, never from a flag.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum WebService {
+    Tavily,
+    Brave,
+}
+
+impl WebService {
+    fn parse(s: &str) -> Result<WebService> {
+        match s {
+            "tavily" => Ok(WebService::Tavily),
+            "brave" => Ok(WebService::Brave),
+            other => anyhow::bail!("unknown --web-search '{other}' (tavily or brave)"),
+        }
+    }
+
+    fn name(self) -> &'static str {
+        match self {
+            WebService::Tavily => "tavily",
+            WebService::Brave => "brave",
+        }
+    }
+
+    fn key_var(self) -> &'static str {
+        match self {
+            WebService::Tavily => "TAVILY_API_KEY",
+            WebService::Brave => "BRAVE_SEARCH_API_KEY",
+        }
+    }
+
+    fn base_url(self) -> &'static str {
+        match self {
+            WebService::Tavily => "https://api.tavily.com",
+            WebService::Brave => "https://api.search.brave.com",
+        }
+    }
+
+    fn signup_hint(self) -> &'static str {
+        match self {
+            WebService::Tavily => "free at tavily.com",
+            WebService::Brave => "at brave.com/search/api",
+        }
+    }
 }
 
 /// Ctrl-C state shared with the signal handler.
@@ -193,6 +251,8 @@ struct Setup<'a> {
     cancel: Arc<AtomicBool>,
     busy: Arc<AtomicBool>,
     last_press: Arc<Mutex<Option<Instant>>>,
+    /// The web line shown by `/status`.
+    web_state: String,
 }
 
 pub fn run(cli: &Cli, args: &AgentArgs) -> Result<i32> {
@@ -207,6 +267,36 @@ pub fn run(cli: &Cli, args: &AgentArgs) -> Result<i32> {
         sandbox.writable.push(fs::canonicalize(dir).with_context(|| format!("--writable {}", dir.display()))?);
     }
     let require_sandbox = mode == Mode::Full && sandbox_mode != SandboxMode::None;
+
+    // Web search is on when its key is set and --no-web is not given. A key is never printed.
+    let service = WebService::parse(&args.web_search)?;
+    let web_key = if args.no_web {
+        None
+    } else {
+        std::env::var(service.key_var()).ok().filter(|k| !k.trim().is_empty())
+    };
+    let quota_note = state::quota_used_up_at(&state::state_path(&root));
+    let web_state = match (args.no_web, &web_key) {
+        (true, _) => "web off (--no-web)".to_string(),
+        (false, None) => format!("web off (no {})", service.key_var()),
+        (false, Some(_)) => {
+            let ask = if mode == Mode::Full || args.allow_web { "allowed" } else { "asks" };
+            match &quota_note {
+                Some(at) => format!("web {} ({ask}, quota used up at {at})", service.name()),
+                None => format!("web {} ({ask})", service.name()),
+            }
+        }
+    };
+    let web_name = web_key.as_ref().map(|_| service.name());
+    // Secret values are read now, while the workspace is still whole, for the query check.
+    let web_secrets: Vec<String> = match &web_key {
+        Some(key) => {
+            let mut values = secret_values(&workspace.secret_files());
+            values.push(key.clone());
+            values
+        }
+        None => Vec::new(),
+    };
 
     let cancel = Arc::new(AtomicBool::new(false));
     let busy = Arc::new(AtomicBool::new(false));
@@ -226,6 +316,7 @@ pub fn run(cli: &Cli, args: &AgentArgs) -> Result<i32> {
         "workspace": root.display().to_string(),
         "permission": mode.as_str(),
         "sandbox": if sandbox.active() { "bwrap" } else { "none" },
+        "web_search": web_name,
     });
     let (mut session, mut messages) = match &args.resume {
         Some(id) => {
@@ -235,7 +326,7 @@ pub fn run(cli: &Cli, args: &AgentArgs) -> Result<i32> {
         None => {
             let mut s = Session::create(&root, header).context("creating the session transcript")?;
             let agents_md = fs::read_to_string(root.join("AGENTS.md")).ok();
-            let system = prompt::system_prompt(&root, std::env::consts::OS, agents_md.as_deref(), args.system.as_deref());
+            let system = prompt::system_prompt(&root, std::env::consts::OS, agents_md.as_deref(), args.system.as_deref(), web_key.is_some());
             let msgs = vec![Message::new("system", &system)];
             s.record(&AgentEvent::MessageAdded(msgs[0].clone()))?;
             (s, msgs)
@@ -254,12 +345,23 @@ pub fn run(cli: &Cli, args: &AgentArgs) -> Result<i32> {
         require_sandbox,
         default_timeout_secs: args.command_timeout,
     }))?;
+    if let Some(key) = &web_key {
+        let base = dory_agent::web::base_url(service.base_url());
+        let provider: Box<dyn SearchProvider> = match service {
+            WebService::Tavily => Box::new(Tavily::new(key, &base)),
+            WebService::Brave => Box::new(Brave::new(key, &base)),
+        };
+        let tool = WebSearch::new(provider, args.web_max_searches)
+            .with_secrets(web_secrets)
+            .with_state_file(state::state_path(&root));
+        registry.add(Box::new(tool))?;
+    }
     if let Some(p) = &cli.gen_args.tools {
         ToolSet::load(p)?.register_into(&mut registry)?;
     }
 
     let policy = Policy::new(
-        Permissions { mode, commands: CommandRules::new(&args.allow_commands) },
+        Permissions { mode, commands: CommandRules::new(&args.allow_commands), allow_web: args.allow_web },
         Box::new(TerminalApprover { cancel: cancel.clone() }),
     );
 
@@ -271,13 +373,17 @@ pub fn run(cli: &Cli, args: &AgentArgs) -> Result<i32> {
         "none (bwrap is not available here)".to_string()
     };
     eprintln!(
-        "agent: workspace {} | permission {} | sandbox {} | network {} | session {}",
+        "agent: workspace {} | permission {} | sandbox {} | network {} | {} | session {}",
         root.display(),
         mode.as_str(),
         sandbox_state,
         if args.network { "on" } else { "off" },
+        web_state,
         session.id
     );
+    if !args.no_web && web_key.is_none() {
+        eprintln!("web search off: set {} ({})", service.key_var(), service.signup_hint());
+    }
     if mode == Mode::Full {
         eprintln!("warning: full mode runs commands without asking.");
         if !sandbox.active() {
@@ -296,6 +402,7 @@ pub fn run(cli: &Cli, args: &AgentArgs) -> Result<i32> {
         cancel,
         busy,
         last_press,
+        web_state,
     };
     let output = Output {
         json: args.json,
@@ -304,7 +411,7 @@ pub fn run(cli: &Cli, args: &AgentArgs) -> Result<i32> {
         verbose: args.verbose,
     };
     if args.json {
-        output.line("session", json!({"id": session.id}));
+        output.line("session", json!({"id": session.id, "web_search": web_name}));
     }
 
     let code = match &args.prompt {
@@ -436,10 +543,11 @@ fn repl(setup: &Setup, session: &mut Session, output: &Output, messages: &mut Ve
             }
             "/status" => {
                 eprintln!(
-                    "[session {} | workspace {} | permission {} | messages {}]",
+                    "[session {} | workspace {} | permission {} | {} | messages {}]",
                     session.id,
                     root.display(),
                     policy_mode.as_str(),
+                    setup.web_state,
                     messages.len()
                 );
                 continue;

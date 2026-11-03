@@ -8,6 +8,7 @@ use crate::tool::{Tool, ToolOutcome};
 
 pub mod command;
 pub mod read;
+pub mod web;
 pub mod write;
 
 /// Largest file any file tool will read, in bytes.

@@ -93,12 +93,14 @@ impl CommandRules {
 pub struct Permissions {
     pub mode: Mode,
     pub commands: CommandRules,
+    /// `--allow-web`: network calls run without asking, in any mode.
+    pub allow_web: bool,
 }
 
 impl Permissions {
     /// What run and chat use: their `--tools` file is the allowlist, so nothing asks.
     pub fn allow_all() -> Self {
-        Permissions { mode: Mode::Full, commands: CommandRules::default() }
+        Permissions { mode: Mode::Full, commands: CommandRules::default(), allow_web: false }
     }
 
     /// `command` is the command text for `Execute` calls that have one.
@@ -106,6 +108,10 @@ impl Permissions {
         let matched = command.is_some_and(|c| self.commands.matches(c));
         match (self.mode, risk) {
             (_, Risk::Read) => Decision::Allow,
+            // A search changes nothing locally, so read-only asks rather than refuses.
+            (_, Risk::Network) if self.allow_web => Decision::Allow,
+            (Mode::Full, Risk::Network) => Decision::Allow,
+            (_, Risk::Network) => Decision::Ask,
             (Mode::ReadOnly, _) => Decision::Deny,
             (Mode::Ask, Risk::Write) => Decision::Ask,
             (Mode::AutoEdit | Mode::Full, Risk::Write) => Decision::Allow,
@@ -256,10 +262,17 @@ impl Policy {
                     }
                     Answer::No => Verdict::Refuse("error: the user did not approve this call".into()),
                     Answer::NoWith(msg) => Verdict::Refuse(format!("error: the user declined this call: {msg}")),
-                    Answer::Unavailable => Verdict::Refuse(format!(
-                        "error: '{}' needs approval, but there is no terminal to ask on. Run with a permission mode that allows it, or with --allow-command for a specific command.",
-                        tool.name()
-                    )),
+                    Answer::Unavailable => {
+                        let way_out = if risk == Risk::Network {
+                            "or with --allow-web to allow searches"
+                        } else {
+                            "or with --allow-command for a specific command"
+                        };
+                        Verdict::Refuse(format!(
+                            "error: '{}' needs approval, but there is no terminal to ask on. Run with a permission mode that allows it, {way_out}.",
+                            tool.name()
+                        ))
+                    }
                 }
             }
         }
@@ -293,8 +306,25 @@ mod tests {
             (Mode::Full, Risk::Write, None, Allow),
         ];
         for (mode, risk, cmd, want) in cases {
-            let p = Permissions { mode: *mode, commands: rules(&["cargo test"]) };
+            let p = Permissions { mode: *mode, commands: rules(&["cargo test"]), allow_web: false };
             assert_eq!(p.decide(*risk, *cmd), *want, "{mode:?} {risk:?} {cmd:?}");
+        }
+    }
+
+    /// Network calls: every mode, with and without `--allow-web`.
+    #[test]
+    fn network_decision_table() {
+        use Decision::*;
+        let modes = [Mode::ReadOnly, Mode::Ask, Mode::AutoEdit, Mode::Full];
+        for mode in modes {
+            for allow_web in [false, true] {
+                let want = match (mode, allow_web) {
+                    (_, true) | (Mode::Full, false) => Allow,
+                    _ => Ask,
+                };
+                let p = Permissions { mode, commands: CommandRules::default(), allow_web };
+                assert_eq!(p.decide(Risk::Network, None), want, "{mode:?} allow_web={allow_web}");
+            }
         }
     }
 

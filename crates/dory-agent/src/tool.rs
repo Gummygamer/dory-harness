@@ -1,7 +1,7 @@
 //! The tool interface and the registry the agent calls through.
 
 use std::{
-    cell::RefCell,
+    cell::{Cell, RefCell},
     collections::HashMap,
     hash::{DefaultHasher, Hasher},
     path::{Path, PathBuf},
@@ -23,6 +23,8 @@ pub enum Risk {
     Write,
     /// Runs a program. Its reach is limited only by the sandbox.
     Execute,
+    /// Sends text to a service outside the machine. Not `Read`: a read stays on this machine.
+    Network,
 }
 
 /// What a tool returns to the model.
@@ -54,6 +56,8 @@ pub struct ToolCtx {
     pub scratch: Option<PathBuf>,
     /// Raised by Ctrl-C (or a test). Running commands are killed when it is set.
     pub cancel: Arc<AtomicBool>,
+    /// Searches started in the current task. Reset by the agent at the start of each turn.
+    pub web_searches: Cell<usize>,
 }
 
 impl ToolCtx {
@@ -63,7 +67,7 @@ impl ToolCtx {
 
     /// A context that shares `cancel` with the agent, so one flag stops both.
     pub fn with_cancel(workspace: Workspace, cancel: Arc<AtomicBool>) -> Self {
-        ToolCtx { workspace, files: RefCell::new(FileLog::default()), scratch: None, cancel }
+        ToolCtx { workspace, files: RefCell::new(FileLog::default()), scratch: None, cancel, web_searches: Cell::new(0) }
     }
 }
 

@@ -170,6 +170,8 @@ impl Agent<'_> {
     /// Appends the assistant replies and tool results to `messages`, until the turn ends.
     pub fn run_turn(&self, messages: &mut Vec<Message>, on_event: &mut dyn FnMut(AgentEvent)) -> Result<TurnReport> {
         let started = Instant::now();
+        // The search budget is per task: each turn starts with a full one.
+        self.tools.ctx.web_searches.set(0);
         let defs = self.tools.defs();
         let schemas = self.tools.schemas();
         let mut report = TurnReport::default();

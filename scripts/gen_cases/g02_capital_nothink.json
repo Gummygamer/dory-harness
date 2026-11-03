@@ -1,0 +1,9 @@
+{
+ "messages": [
+  {
+   "role": "user",
+   "content": "What is the capital of Portugal? Answer in one word."
+  }
+ ],
+ "enable_thinking": false
+}

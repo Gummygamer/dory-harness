@@ -1,0 +1,19 @@
+[
+  {
+    "name": "get_weather",
+    "description": "Get the current weather for a city.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "city": {"type": "string", "description": "City name"}
+      },
+      "required": ["city"]
+    },
+    "exec": ["python3", "-I", "examples/get_weather.py"]
+  },
+  {
+    "name": "describe_only",
+    "description": "A tool with no exec entry. It is advertised to the model but never run.",
+    "parameters": {"type": "object", "properties": {}}
+  }
+]

@@ -1,0 +1,18 @@
+{
+ "messages": [
+  {
+   "role": "user",
+   "content": "Capital of Portugal?"
+  },
+  {
+   "role": "assistant",
+   "content": "Lisbon",
+   "reasoning_content": "Portugal's capital is Lisbon."
+  },
+  {
+   "role": "user",
+   "content": "Thanks, and Spain?"
+  }
+ ],
+ "enable_thinking": false
+}

@@ -1,0 +1,63 @@
+=== A: server --ctx-checkpoints 0 vs saved harness
+  1 last_loop g01_capital_think: completion==harness True  chat==harness True
+  1 last_loop g02_capital_nothink: completion==harness True  chat==harness True
+  1 last_loop g03_math_think: completion==harness True  chat==harness True
+  1 last_loop g04_weather_think: completion==harness True  chat==harness True
+  1 last_loop g05_weather_nothink: completion==harness True  chat==harness True
+A 1 last_loop: completion 5/5, chat 5/5
+  2 last_loop g01_capital_think: completion==harness True  chat==harness True
+  2 last_loop g02_capital_nothink: completion==harness True  chat==harness True
+  2 last_loop g03_math_think: completion==harness True  chat==harness True
+  2 last_loop g04_weather_think: completion==harness True  chat==harness True
+  2 last_loop g05_weather_nothink: completion==harness True  chat==harness True
+A 2 last_loop: completion 5/5, chat 5/5
+  4 last_loop g01_capital_think: completion==harness True  chat==harness True
+  4 last_loop g02_capital_nothink: completion==harness True  chat==harness True
+  4 last_loop g03_math_think: completion==harness True  chat==harness True
+  4 last_loop g04_weather_think: completion==harness True  chat==harness True
+  4 last_loop g05_weather_nothink: completion==harness True  chat==harness True
+A 4 last_loop: completion 5/5, chat 5/5
+  2 per_loop g01_capital_think: completion==harness True  chat==harness True
+  2 per_loop g02_capital_nothink: completion==harness True  chat==harness True
+  2 per_loop g03_math_think: completion==harness True  chat==harness True
+  2 per_loop g04_weather_think: completion==harness True  chat==harness True
+  2 per_loop g05_weather_nothink: completion==harness True  chat==harness True
+A 2 per_loop: completion 5/5, chat 5/5
+  4 per_loop g01_capital_think: completion==harness True  chat==harness True
+  4 per_loop g02_capital_nothink: completion==harness True  chat==harness True
+  4 per_loop g03_math_think: completion==harness True  chat==harness True
+  4 per_loop g04_weather_think: completion==harness True  chat==harness True
+  4 per_loop g05_weather_nothink: completion==harness True  chat==harness True
+A 4 per_loop: completion 5/5, chat 5/5
+=== B: harness split n-4 + 4 vs saved default server
+  1 last_loop g01_capital_think n=28: split harness==default server True
+  1 last_loop g02_capital_nothink n=28: split harness==default server True
+  1 last_loop g03_math_think n=32: split harness==default server True
+  1 last_loop g04_weather_think n=280: split harness==default server True
+  1 last_loop g05_weather_nothink n=275: split harness==default server True
+B 1 last_loop: 5/5
+  2 last_loop g01_capital_think n=28: split harness==default server True
+  2 last_loop g02_capital_nothink n=28: split harness==default server True
+  2 last_loop g03_math_think n=32: split harness==default server True
+  2 last_loop g04_weather_think n=280: split harness==default server True
+  2 last_loop g05_weather_nothink n=275: split harness==default server True
+B 2 last_loop: 5/5
+  4 last_loop g01_capital_think n=28: split harness==default server True
+  4 last_loop g02_capital_nothink n=28: split harness==default server True
+  4 last_loop g03_math_think n=32: split harness==default server True
+  4 last_loop g04_weather_think n=280: split harness==default server True
+  4 last_loop g05_weather_nothink n=275: split harness==default server True
+B 4 last_loop: 5/5
+  2 per_loop g01_capital_think n=28: split harness==default server True
+  2 per_loop g02_capital_nothink n=28: split harness==default server True
+  2 per_loop g03_math_think n=32: split harness==default server True
+  2 per_loop g04_weather_think n=280: split harness==default server True
+  2 per_loop g05_weather_nothink n=275: split harness==default server True
+B 2 per_loop: 5/5
+  4 per_loop g01_capital_think n=28: split harness==default server True
+  4 per_loop g02_capital_nothink n=28: split harness==default server True
+  4 per_loop g03_math_think n=32: split harness==default server True
+  4 per_loop g04_weather_think n=280: split harness==default server True
+  4 per_loop g05_weather_nothink n=275: split harness==default server True
+B 4 per_loop: 5/5
+CHUNK_TEST_DONE

@@ -1,0 +1,59 @@
+== 1. n_outputs_max=1: VRAM by context (bench prints vram_mib)
+loops=2 cache=last_loop ctx=4096 batch=2048 prompt=481 gen=64 vram_mib=3368 prefill_tok_s=1482 decode_tok_s=47.6 wall_s=1.67
+loops=2 cache=last_loop ctx=32768 batch=2048 prompt=481 gen=64 vram_mib=4404 prefill_tok_s=1491 decode_tok_s=47.7 wall_s=1.66
+loops=2 cache=last_loop ctx=65536 batch=2048 prompt=481 gen=64 vram_mib=5588 prefill_tok_s=1488 decode_tok_s=48.1 wall_s=1.65
+== 2. server VRAM at 4K (idle baseline first)
+28 MiB
+3414 MiB
+== 3. does n_outputs_max change output? g04 greedy, 2 loops
+identical
+== 4. chunk sensitivity by device, KV type, cache mode, loops; first token top2 logprobs (n=275)
+gpu_layers=-1 kv=f16 loops=1 per_loop batch=2048: [-0.0747, -2.7204]
+gpu_layers=-1 kv=f16 loops=1 per_loop batch=274: [-0.0906, -2.5735]
+gpu_layers=-1 kv=f16 loops=1 per_loop batch=271: [-0.0681, -2.8667]
+gpu_layers=-1 kv=f16 loops=1 per_loop batch=137: [-0.0588, -2.9929]
+gpu_layers=-1 kv=f16 loops=2 per_loop batch=2048: [-0.0062, -5.4349]
+gpu_layers=-1 kv=f16 loops=2 per_loop batch=274: [-0.0392, -3.4557]
+gpu_layers=-1 kv=f16 loops=2 per_loop batch=271: [-0.027, -3.8161]
+gpu_layers=-1 kv=f16 loops=2 per_loop batch=137: [-0.0527, -3.2557]
+gpu_layers=-1 kv=f16 loops=2 last_loop batch=2048: [-0.0062, -5.4349]
+gpu_layers=-1 kv=f16 loops=2 last_loop batch=274: [-0.0164, -4.3987]
+gpu_layers=-1 kv=f16 loops=2 last_loop batch=271: [-0.0398, -3.4413]
+gpu_layers=-1 kv=f16 loops=2 last_loop batch=137: [-0.0111, -4.9959]
+gpu_layers=-1 kv=f32 loops=1 per_loop batch=2048: [-0.0747, -2.7204]
+gpu_layers=-1 kv=f32 loops=1 per_loop batch=274: [-0.0906, -2.5735]
+gpu_layers=-1 kv=f32 loops=1 per_loop batch=271: [-0.0681, -2.8667]
+gpu_layers=-1 kv=f32 loops=1 per_loop batch=137: [-0.0588, -2.9929]
+gpu_layers=-1 kv=f32 loops=2 per_loop batch=2048: [-0.0062, -5.4349]
+gpu_layers=-1 kv=f32 loops=2 per_loop batch=274: [-0.0392, -3.4557]
+gpu_layers=-1 kv=f32 loops=2 per_loop batch=271: [-0.027, -3.8161]
+gpu_layers=-1 kv=f32 loops=2 per_loop batch=137: [-0.0527, -3.2557]
+gpu_layers=-1 kv=f32 loops=2 last_loop batch=2048: [-0.0062, -5.4349]
+gpu_layers=-1 kv=f32 loops=2 last_loop batch=274: [-0.0164, -4.3987]
+gpu_layers=-1 kv=f32 loops=2 last_loop batch=271: [-0.0398, -3.4413]
+gpu_layers=-1 kv=f32 loops=2 last_loop batch=137: [-0.0111, -4.9959]
+gpu_layers=0 kv=f16 loops=1 per_loop batch=2048: [-0.0752, -2.7144]
+gpu_layers=0 kv=f16 loops=1 per_loop batch=274: [-0.0853, -2.6222]
+gpu_layers=0 kv=f16 loops=1 per_loop batch=271: [-0.1271, -2.2181]
+gpu_layers=0 kv=f16 loops=1 per_loop batch=137: [-0.0659, -2.8127]
+gpu_layers=0 kv=f16 loops=2 per_loop batch=2048: [-0.0062, -5.4377]
+gpu_layers=0 kv=f16 loops=2 per_loop batch=274: [-0.0238, -3.851]
+gpu_layers=0 kv=f16 loops=2 per_loop batch=271: [-0.0159, -4.3094]
+gpu_layers=0 kv=f16 loops=2 per_loop batch=137: [-0.0147, -4.4548]
+gpu_layers=0 kv=f16 loops=2 last_loop batch=2048: [-0.0062, -5.4377]
+gpu_layers=0 kv=f16 loops=2 last_loop batch=274: [-0.0135, -4.5056]
+gpu_layers=0 kv=f16 loops=2 last_loop batch=271: [-0.015, -4.6103]
+gpu_layers=0 kv=f16 loops=2 last_loop batch=137: [-0.0109, -4.8133]
+gpu_layers=0 kv=f32 loops=1 per_loop batch=2048: [-0.0752, -2.7144]
+gpu_layers=0 kv=f32 loops=1 per_loop batch=274: [-0.0853, -2.6222]
+gpu_layers=0 kv=f32 loops=1 per_loop batch=271: [-0.1271, -2.2181]
+gpu_layers=0 kv=f32 loops=1 per_loop batch=137: [-0.0659, -2.8127]
+gpu_layers=0 kv=f32 loops=2 per_loop batch=2048: [-0.0062, -5.4377]
+gpu_layers=0 kv=f32 loops=2 per_loop batch=274: [-0.0238, -3.851]
+gpu_layers=0 kv=f32 loops=2 per_loop batch=271: [-0.0159, -4.3094]
+gpu_layers=0 kv=f32 loops=2 per_loop batch=137: [-0.0147, -4.4548]
+gpu_layers=0 kv=f32 loops=2 last_loop batch=2048: [-0.0062, -5.4377]
+gpu_layers=0 kv=f32 loops=2 last_loop batch=274: [-0.0135, -4.5056]
+gpu_layers=0 kv=f32 loops=2 last_loop batch=271: [-0.015, -4.6103]
+gpu_layers=0 kv=f32 loops=2 last_loop batch=137: [-0.0109, -4.8133]
+SCRATCH_DONE

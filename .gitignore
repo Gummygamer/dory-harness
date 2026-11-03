@@ -1,0 +1,9 @@
+# Build output (about 2.4 GB; rebuild with cargo)
+target/
+
+# Python bytecode
+__pycache__/
+*.pyc
+
+# Machine-specific cargo config (hardcodes the local target dir)
+.cargo/

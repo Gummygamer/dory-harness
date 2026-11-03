@@ -1,0 +1,21 @@
+{
+ "messages": [
+  {
+   "role": "system",
+   "content": "Be brief."
+  },
+  {
+   "role": "user",
+   "content": "Capital of France?"
+  },
+  {
+   "role": "assistant",
+   "content": "Paris"
+  },
+  {
+   "role": "user",
+   "content": "And Spain?"
+  }
+ ],
+ "enable_thinking": true
+}

@@ -1,0 +1,9 @@
+{
+ "messages": [
+  {
+   "role": "user",
+   "content": "Quote: \"hi\" & <tag> é 你好"
+  }
+ ],
+ "enable_thinking": false
+}

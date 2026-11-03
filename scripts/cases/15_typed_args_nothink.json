@@ -1,0 +1,67 @@
+{
+ "messages": [
+  {
+   "role": "user",
+   "content": "Turn it on, fast mode."
+  },
+  {
+   "role": "assistant",
+   "content": "",
+   "reasoning_content": "Use set_flag.",
+   "tool_calls": [
+    {
+     "name": "set_flag",
+     "arguments": {
+      "enabled": true,
+      "opts": {
+       "retries": 3
+      },
+      "mode": "fast"
+     }
+    }
+   ]
+  },
+  {
+   "role": "tool",
+   "content": "ok"
+  },
+  {
+   "role": "user",
+   "content": "Thanks."
+  }
+ ],
+ "tools": [
+  {
+   "name": "set_flag",
+   "description": "  Set a flag.  ",
+   "parameters": {
+    "type": "object",
+    "properties": {
+     "enabled": {
+      "type": "boolean",
+      "description": "on or off"
+     },
+     "opts": {
+      "type": "object",
+      "properties": {
+       "retries": {
+        "type": "integer"
+       }
+      }
+     },
+     "mode": {
+      "type": "string",
+      "enum": [
+       "fast",
+       "slow"
+      ]
+     }
+    },
+    "required": [
+     "mode"
+    ]
+   }
+  }
+ ],
+ "enable_thinking": false
+}

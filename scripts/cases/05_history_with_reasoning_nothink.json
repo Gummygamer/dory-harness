@@ -1,0 +1,18 @@
+{
+ "messages": [
+  {
+   "role": "user",
+   "content": "Capital of Portugal?"
+  },
+  {
+   "role": "assistant",
+   "content": "Lisbon",
+   "reasoning_content": "The user asks about Portugal. It is Lisbon."
+  },
+  {
+   "role": "user",
+   "content": "And Italy?"
+  }
+ ],
+ "enable_thinking": false
+}

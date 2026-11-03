@@ -1,0 +1,13 @@
+{
+ "messages": [
+  {
+   "role": "system",
+   "content": "You are terse."
+  },
+  {
+   "role": "user",
+   "content": "What is 2+2?"
+  }
+ ],
+ "enable_thinking": false
+}

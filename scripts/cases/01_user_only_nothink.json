@@ -1,0 +1,9 @@
+{
+ "messages": [
+  {
+   "role": "user",
+   "content": "Hello"
+  }
+ ],
+ "enable_thinking": false
+}

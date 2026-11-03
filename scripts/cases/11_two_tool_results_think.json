@@ -1,0 +1,56 @@
+{
+ "messages": [
+  {
+   "role": "user",
+   "content": "Weather in Lisbon and Porto?"
+  },
+  {
+   "role": "assistant",
+   "content": "",
+   "tool_calls": [
+    {
+     "name": "get_weather",
+     "arguments": {
+      "city": "Lisbon"
+     }
+    },
+    {
+     "name": "get_weather",
+     "arguments": {
+      "city": "Porto"
+     }
+    }
+   ]
+  },
+  {
+   "role": "tool",
+   "content": "sunny"
+  },
+  {
+   "role": "tool",
+   "content": "rain"
+  }
+ ],
+ "tools": [
+  {
+   "name": "get_weather",
+   "description": "Get the weather for a city.",
+   "parameters": {
+    "type": "object",
+    "properties": {
+     "city": {
+      "type": "string",
+      "description": "City name"
+     },
+     "days": {
+      "type": "integer"
+     }
+    },
+    "required": [
+     "city"
+    ]
+   }
+  }
+ ],
+ "enable_thinking": true
+}

@@ -1,0 +1,49 @@
+n=275 m=137 loops=1 per_loop ngl=0 threads=8
+logits whole: top 1010=23.6807 1073=19.3979
+logits split m: top 1010=23.6807 1073=19.3979
+logits split n-4: top 1010=22.5524 1073=19.6209
+REPEAT whole vs whole (noise floor): first tensor differing by >1e-4 relative: None
+  l_out max|d| by layer: 0:0.0e0 1:0.0e0 2:0.0e0 3:0.0e0 4:0.0e0 5:0.0e0 6:0.0e0 7:0.0e0 8:0.0e0 16:0.0e0 24:0.0e0 32:0.0e0 40:0.0e0 48:0.0e0 56:0.0e0 64:0.0e0
+  last layer 71 max|d|=0.000e0 (max|x|=0.412)
+CAUSALITY rows<m: whole vs prefix alone: first tensor differing by >1e-4 relative: None
+  l_out max|d| by layer: 0:0.0e0 1:0.0e0 2:0.0e0 3:0.0e0 4:0.0e0 5:0.0e0 6:0.0e0 7:0.0e0 8:0.0e0 16:0.0e0 24:0.0e0 32:0.0e0 40:0.0e0 48:0.0e0 56:0.0e0 64:0.0e0
+  last layer 71 max|d|=0.000e0 (max|x|=0.376)
+CHUNK rows>=m: whole vs second chunk: first tensor differing by >1e-4 relative: None
+  l_out max|d| by layer: 0:0.0e0 1:0.0e0 2:0.0e0 3:0.0e0 4:0.0e0 5:0.0e0 6:0.0e0 7:0.0e0 8:0.0e0 16:0.0e0 24:0.0e0 32:0.0e0 40:0.0e0 48:0.0e0 56:0.0e0 64:0.0e0
+  last layer 71 max|d|=0.000e0 (max|x|=0.412)
+CHUNK last 4: whole vs n-4 split: first tensor differing by >1e-4 relative: Some(("kqv_out-0", 0.00084884465, 0.2153891))
+  l_out max|d| by layer: 0:1.2e-3 1:5.6e-4 2:2.1e-3 3:2.9e-3 4:2.3e-3 5:2.6e-3 6:2.7e-3 7:2.0e-3 8:2.6e-3 16:2.6e-3 24:3.2e-3 32:7.2e-3 40:5.8e-3 48:6.5e-3 56:1.5e-2 64:1.3e-2
+  last layer 71 max|d|=2.146e-2 (max|x|=0.117)
+n=275 m=137 loops=2 per_loop ngl=0 threads=8
+logits whole: top 1010=23.5722 1073=19.1062
+logits split m: top 1010=23.5722 1073=19.1062
+logits split n-4: top 1010=21.7011 1073=18.6784
+REPEAT whole vs whole (noise floor): first tensor differing by >1e-4 relative: None
+  l_out max|d| by layer: 0:0.0e0 1:0.0e0 2:0.0e0 3:0.0e0 4:0.0e0 5:0.0e0 6:0.0e0 7:0.0e0 8:0.0e0 16:0.0e0 24:0.0e0 32:0.0e0 40:0.0e0 48:0.0e0 56:0.0e0 64:0.0e0 72:0.0e0 80:0.0e0 88:0.0e0 96:0.0e0 104:0.0e0
+  last layer 111 max|d|=0.000e0 (max|x|=0.382)
+CAUSALITY rows<m: whole vs prefix alone: first tensor differing by >1e-4 relative: None
+  l_out max|d| by layer: 0:0.0e0 1:0.0e0 2:0.0e0 3:0.0e0 4:0.0e0 5:0.0e0 6:0.0e0 7:0.0e0 8:0.0e0 16:0.0e0 24:0.0e0 32:0.0e0 40:0.0e0 48:0.0e0 56:0.0e0 64:0.0e0 72:0.0e0 80:0.0e0 88:0.0e0 96:0.0e0 104:0.0e0
+  last layer 111 max|d|=0.000e0 (max|x|=0.372)
+CHUNK rows>=m: whole vs second chunk: first tensor differing by >1e-4 relative: None
+  l_out max|d| by layer: 0:0.0e0 1:0.0e0 2:0.0e0 3:0.0e0 4:0.0e0 5:0.0e0 6:0.0e0 7:0.0e0 8:0.0e0 16:0.0e0 24:0.0e0 32:0.0e0 40:0.0e0 48:0.0e0 56:0.0e0 64:0.0e0 72:0.0e0 80:0.0e0 88:0.0e0 96:0.0e0 104:0.0e0
+  last layer 111 max|d|=0.000e0 (max|x|=0.382)
+CHUNK last 4: whole vs n-4 split: first tensor differing by >1e-4 relative: Some(("kqv_out-0", 0.00084884465, 0.2153891))
+  l_out max|d| by layer: 0:1.2e-3 1:5.6e-4 2:2.1e-3 3:2.9e-3 4:2.3e-3 5:2.6e-3 6:2.7e-3 7:2.0e-3 8:2.6e-3 16:2.6e-3 24:3.2e-3 32:7.2e-3 40:5.8e-3 48:6.5e-3 56:3.0e-3 64:5.1e-3 72:1.3e-2 80:6.8e-3 88:6.8e-3 96:9.3e-3 104:2.6e-2
+  last layer 111 max|d|=2.526e-2 (max|x|=0.100)
+n=275 m=137 loops=2 last_loop ngl=0 threads=8
+logits whole: top 1010=23.5722 1073=19.1062
+logits split m: top 1010=22.7237 1073=18.8389
+logits split n-4: top 1010=23.1112 1073=18.8921
+REPEAT whole vs whole (noise floor): first tensor differing by >1e-4 relative: None
+  l_out max|d| by layer: 0:0.0e0 1:0.0e0 2:0.0e0 3:0.0e0 4:0.0e0 5:0.0e0 6:0.0e0 7:0.0e0 8:0.0e0 16:0.0e0 24:0.0e0 32:0.0e0 40:0.0e0 48:0.0e0 56:0.0e0 64:0.0e0 72:0.0e0 80:0.0e0 88:0.0e0 96:0.0e0 104:0.0e0
+  last layer 111 max|d|=0.000e0 (max|x|=0.382)
+CAUSALITY rows<m: whole vs prefix alone: first tensor differing by >1e-4 relative: None
+  l_out max|d| by layer: 0:0.0e0 1:0.0e0 2:0.0e0 3:0.0e0 4:0.0e0 5:0.0e0 6:0.0e0 7:0.0e0 8:0.0e0 16:0.0e0 24:0.0e0 32:0.0e0 40:0.0e0 48:0.0e0 56:0.0e0 64:0.0e0 72:0.0e0 80:0.0e0 88:0.0e0 96:0.0e0 104:0.0e0
+  last layer 111 max|d|=0.000e0 (max|x|=0.372)
+CHUNK rows>=m: whole vs second chunk: first tensor differing by >1e-4 relative: Some(("kqv_out-16", 0.007045705, 0.100441754))
+  l_out max|d| by layer: 0:0.0e0 1:0.0e0 2:0.0e0 3:0.0e0 4:0.0e0 5:0.0e0 6:0.0e0 7:0.0e0 8:0.0e0 16:4.0e-2 24:2.7e-2 32:4.6e-2 40:3.5e-2 48:4.6e-2 56:4.1e-2 64:3.0e-2 72:5.1e-2 80:3.4e-2 88:4.3e-2 96:1.8e-1 104:3.3e-2
+  last layer 111 max|d|=3.803e-2 (max|x|=0.382)
+CHUNK last 4: whole vs n-4 split: first tensor differing by >1e-4 relative: Some(("kqv_out-0", 0.00084884465, 0.2153891))
+  l_out max|d| by layer: 0:1.2e-3 1:5.6e-4 2:2.1e-3 3:2.9e-3 4:2.3e-3 5:2.6e-3 6:2.7e-3 7:2.0e-3 8:2.6e-3 16:2.9e-2 24:7.9e-3 32:1.6e-2 40:9.7e-3 48:1.2e-2 56:4.3e-3 64:4.6e-3 72:1.1e-2 80:6.2e-3 88:7.4e-3 96:2.2e-2 104:2.4e-2
+  last layer 111 max|d|=2.630e-2 (max|x|=0.100)
+TRUECPU_DONE

@@ -1,0 +1,17 @@
+{
+ "messages": [
+  {
+   "role": "user",
+   "content": "Q1"
+  },
+  {
+   "role": "assistant",
+   "content": "<think>hmm</think>Answer one"
+  },
+  {
+   "role": "user",
+   "content": "Q2"
+  }
+ ],
+ "enable_thinking": true
+}

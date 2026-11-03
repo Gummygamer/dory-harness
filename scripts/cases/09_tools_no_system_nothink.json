@@ -1,0 +1,30 @@
+{
+ "messages": [
+  {
+   "role": "user",
+   "content": "Weather in Lisbon?"
+  }
+ ],
+ "tools": [
+  {
+   "name": "get_weather",
+   "description": "Get the weather for a city.",
+   "parameters": {
+    "type": "object",
+    "properties": {
+     "city": {
+      "type": "string",
+      "description": "City name"
+     },
+     "days": {
+      "type": "integer"
+     }
+    },
+    "required": [
+     "city"
+    ]
+   }
+  }
+ ],
+ "enable_thinking": false
+}

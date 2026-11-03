@@ -1,0 +1,25 @@
+{
+ "messages": [
+  {
+   "role": "user",
+   "content": "one"
+  },
+  {
+   "role": "assistant",
+   "content": "two"
+  },
+  {
+   "role": "user",
+   "content": "three"
+  },
+  {
+   "role": "assistant",
+   "content": "four"
+  },
+  {
+   "role": "user",
+   "content": "five"
+  }
+ ],
+ "enable_thinking": true
+}

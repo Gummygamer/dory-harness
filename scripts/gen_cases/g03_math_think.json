@@ -1,0 +1,9 @@
+{
+ "messages": [
+  {
+   "role": "user",
+   "content": "What is 17 * 23? Reply with just the number."
+  }
+ ],
+ "enable_thinking": true
+}

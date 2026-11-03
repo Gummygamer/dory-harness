@@ -1,0 +1,56 @@
+{
+ "messages": [
+  {
+   "role": "system",
+   "content": "Use tools."
+  },
+  {
+   "role": "user",
+   "content": "Weather in Lisbon?"
+  },
+  {
+   "role": "assistant",
+   "content": "Checking.",
+   "reasoning_content": "Need the weather tool.",
+   "tool_calls": [
+    {
+     "name": "get_weather",
+     "arguments": {
+      "city": "Lisbon",
+      "days": 3
+     }
+    }
+   ]
+  },
+  {
+   "role": "tool",
+   "content": "{\"forecast\":\"sunny\",\"temp_c\":21}"
+  },
+  {
+   "role": "user",
+   "content": "Is it warm?"
+  }
+ ],
+ "tools": [
+  {
+   "name": "get_weather",
+   "description": "Get the weather for a city.",
+   "parameters": {
+    "type": "object",
+    "properties": {
+     "city": {
+      "type": "string",
+      "description": "City name"
+     },
+     "days": {
+      "type": "integer"
+     }
+    },
+    "required": [
+     "city"
+    ]
+   }
+  }
+ ],
+ "enable_thinking": true
+}

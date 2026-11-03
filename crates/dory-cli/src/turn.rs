@@ -9,7 +9,7 @@ use dory_engine::{
     Engine, Event, GenParams, GenStats,
     chat::{self, Message, ToolCall},
     parse::{Piece, StreamParser},
-    tools::ToolSet,
+    tools::{ToolSet, sanitize_tool_output},
 };
 use serde_json::Value;
 
@@ -104,7 +104,7 @@ pub fn run_turn(messages: &mut Vec<Message>, opts: &TurnOptions) -> dory_engine:
             report.tool_calls += 1;
             let result = opts.tools.call(&call.name, &call.arguments);
             let _ = writeln!(stderr(), "[tool result] {}", truncate(&result, 200));
-            messages.push(Message::new("tool", &result));
+            messages.push(Message::new("tool", &sanitize_tool_output(&result)));
         }
     }
     let _ = writeln!(stderr(), "\n[stopped after {MAX_TOOL_ROUNDS} tool rounds]");

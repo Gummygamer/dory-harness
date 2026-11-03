@@ -13,7 +13,11 @@
   the file tools refused it. Fixes: secret files are masked inside the sandbox (empty file over each),
   and `search_files` skips secret files (it had leaked a `.env` match). Re-run of the security tasks:
   3 of 3 pass on the stricter check. Other tasks were not re-run after these fixes.
-- Not done: step 20 (the measurements of settings) and the repeated seeds that step 19 asks for.
+- Repeated seeds, final binary: 80 of 80 passed (16 tasks × seeds 42–46). Per category: read 15/15,
+  edit 20/20, multi-step 15/15, recovery 15/15, security 15/15. Two runs ended at the round limit and
+  still passed their checks. No run timed out. The tasks are small, so these pass rates are a floor
+  check, not a measure of harder work.
+- Not done: step 20 (the measurements of settings: thinking, temperature, loops, prefix reuse, tool set).
   So the default thinking, temperature, loop count and prefix-reuse choices were not chosen from data,
   and the model's quality on agent tasks is unmeasured.
 - Step 22 is partial: the README has the agent section; this plan is marked here rather than per step.

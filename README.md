@@ -130,8 +130,9 @@ Limits, stated plainly:
   no network by default and the cleared environment are the protections.
 - A value containing the exact closing sequence of a parameter cannot be written reliably; the parser
   cuts it. A call that never closes its `</function>` is reported as malformed.
-- The evaluation has 16 tasks and one seed: 14 of 16 passed. The settings were not measured; see the
-  status in `docs/AGENT_TOOLS_PLAN.md`.
+- The evaluation (`scripts/agent_eval/run_eval.py`) has 16 tasks, 5 seeds each: 80 of 80 passed on the
+  final binary. The tasks are small fixture projects, so this shows the basic loop works, not how it
+  does on large work. The settings were not measured; see `docs/AGENT_TOOLS_PLAN.md`.
 - Compaction (three stages) runs when the prompt passes 70% of the context. The summary stage is one
   extra model round. Transcripts keep the original messages, so a resumed session compacts again.
 - Ctrl-C: once cancels the generation, command or approval; twice within two seconds exits.

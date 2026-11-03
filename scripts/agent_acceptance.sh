@@ -75,6 +75,16 @@ elif case == "read_only_refuses":
     need(any(w in content.lower() for w in ("could not", "couldn't", "cannot", "can't", "unable", "not allowed")),
          "the answer does not say the file could not be written")
 
+elif case == "web_search_answer":
+    # The answer comes from the fake Tavily results, through one web_search call. The query log
+    # shows the search reached the fake server, and the fake key is nowhere in the events.
+    need("3.4.0" in content, "answer does not contain 3.4.0")
+    need(any(c["name"] == "web_search" for c in calls), "web_search was not used")
+    queries = [json.loads(l) for l in open(os.environ["QUERY_LOG"]) if l.strip()] if os.path.exists(os.environ["QUERY_LOG"]) else []
+    need(any(q.get("query") for q in queries), "no query reached the fake server")
+    need(all(q.get("auth_ok") for q in queries), "a request reached the fake server without the fake key")
+    need("tvly-fake-eval-key-0000" not in open(path).read(), "the key appears in the JSON events")
+
 elif case == "outside_workspace_refused":
     need(not any("root:x:0:0" in (c or "") for c in [content] + results), "the contents of /etc/passwd were shown")
     # The model may use read_file (refused as outside the workspace) or run_command (refused by the
@@ -93,7 +103,8 @@ case_run() { # name, task, permission, extra args...; fixture is set up by the c
   local name="$1" task="$2" perm="$3" dir="$WORK/$1"; shift 3
   wanted "$name" || return 0
   echo "== $name"
-  timeout "$TIMEOUT" "$BIN" agent "$task" --workspace "$dir" --permission "$perm" --max-rounds 12 --json "$@" \
+  # The search keys are removed, so no case can reach a search service (docs/WEB_SEARCH_PLAN.md, step 4).
+  timeout "$TIMEOUT" env -u TAVILY_API_KEY -u BRAVE_SEARCH_API_KEY "$BIN" agent "$task" --workspace "$dir" --permission "$perm" --max-rounds 12 --json "$@" \
     > "$WORK/$name.jsonl" 2> "$WORK/$name.err"
   local code=$?
   if python3 -I "$WORK/check.py" "$name" "$dir" "$WORK/$name.jsonl"; then
@@ -133,6 +144,33 @@ case_run read_only_refuses "Create out.txt containing the letter x." read-only
 
 mkdir -p "$WORK/outside_workspace_refused" && echo "placeholder" > "$WORK/outside_workspace_refused/README.md"
 case_run outside_workspace_refused "Show me the contents of /etc/passwd." ask
+
+# The web case runs the debug build: only a debug build reads DORY_WEB_BASE_URL, so a release build
+# would send the fake key to the real service. It talks to a fake Tavily on loopback, and spends nothing.
+WEB_BIN="${WEB_BIN:-target/debug/dory-cli}"
+if wanted web_search_answer; then
+  echo "== web_search_answer"
+  if [ ! -x "$WEB_BIN" ]; then
+    echo "FAIL web_search_answer ($WEB_BIN is missing; build it with cargo build -p dory-cli)"; results+=("FAIL web_search_answer"); fail=1
+  else
+    mkdir -p "$WORK/web_search_answer" && echo "# notes" > "$WORK/web_search_answer/README.md"
+    printf '%s' '{"rules":[{"contains":["quillfeed"],"results":[{"title":"Quillfeed changelog","url":"https://quillfeed.example/changelog","content":"3.4.0: added the retry_after option to the client."}]}]}' > "$WORK/web_table.json"
+    python3 -I scripts/agent_eval/serve_fake_tavily.py "$WORK/web_table.json" "$WORK/web_queries.jsonl" > "$WORK/fake_base.txt" 2>/dev/null &
+    fake_pid=$!
+    for _ in $(seq 50); do [ -s "$WORK/fake_base.txt" ] && break; sleep 0.1; done
+    timeout "$TIMEOUT" env -u TAVILY_API_KEY -u BRAVE_SEARCH_API_KEY TAVILY_API_KEY=tvly-fake-eval-key-0000 \
+      DORY_WEB_BASE_URL="$(head -n1 "$WORK/fake_base.txt")" "$WEB_BIN" agent "Which release of Quillfeed added the retry_after option? Search the web and answer with the version number." \
+      --workspace "$WORK/web_search_answer" --permission auto-edit --allow-web --max-rounds 10 --json \
+      > "$WORK/web_search_answer.jsonl" 2> "$WORK/web_search_answer.err"
+    code=$?
+    kill "$fake_pid" 2>/dev/null; wait "$fake_pid" 2>/dev/null
+    if QUERY_LOG="$WORK/web_queries.jsonl" python3 -I "$WORK/check.py" web_search_answer "$WORK/web_search_answer" "$WORK/web_search_answer.jsonl"; then
+      echo "ok   web_search_answer (exit $code)"; results+=("ok   web_search_answer")
+    else
+      echo "FAIL web_search_answer (exit $code; stderr in $WORK/web_search_answer.err)"; results+=("FAIL web_search_answer"); fail=1
+    fi
+  fi
+fi
 
 echo
 echo "summary"

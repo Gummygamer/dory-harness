@@ -7,3 +7,6 @@ __pycache__/
 
 # Machine-specific cargo config (hardcodes the local target dir)
 .cargo/
+
+# Agent sessions: transcripts and command output (see docs/AGENT_TOOLS_PLAN.md step 15)
+.dory/

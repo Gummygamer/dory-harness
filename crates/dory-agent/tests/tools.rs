@@ -1,6 +1,6 @@
 //! Tool allowlist behaviour. These tests run no model and no GPU work.
 
-use dory_engine::tools::{ToolEntry, ToolSet};
+use dory_agent::tools::{ToolEntry, ToolSet};
 use serde_json::{Map, Value, json};
 
 fn set() -> ToolSet {

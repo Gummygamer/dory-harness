@@ -1,27 +1,34 @@
 //! `dory`: command-line front end for the Dory harness.
 
-mod turn;
-
 use std::{
     io::{BufRead, Write, stderr, stdin, stdout},
     path::PathBuf,
     process::Command,
+    sync::{Arc, atomic::AtomicBool},
     time::Instant,
 };
 
 use anyhow::{Context as _, Result, bail};
 use clap::{Args, Parser, Subcommand, ValueEnum};
+use dory_agent::{
+    Agent, AgentConfig, AgentEvent, Reason, Registry, ToolCtx, TurnReport,
+    policy::Policy,
+    backend::EngineBackend,
+    tools::ToolSet,
+    workspace::Workspace,
+};
 use dory_engine::{
     CacheMode, Engine, EngineOptions, Event, GenParams, LoadOptions, PrefillSchedule,
     chat::{self, Message, ToolDef},
     model::Model,
     parse::{Piece, StreamParser},
     tokenize_model,
-    tools::ToolSet,
     verify,
 };
 
 const DEFAULT_MODEL: &str = "/path/to/drive/models/dory/NVIDIA-Nemotron-Labs-Dory1.0-4B-Q5_K_M.gguf";
+
+mod agent_cmd;
 
 #[derive(Parser)]
 #[command(name = "dory", version, about = "Run Nemotron Dory through the llama.cpp PR fork")]
@@ -153,6 +160,9 @@ enum Cmd {
         #[arg(long)]
         chat_turn: bool,
     },
+    /// Run the agent: the model reads and changes files and runs commands in a project folder,
+    /// under permission rules. Give a task, or leave it out for an interactive session.
+    Agent(agent_cmd::AgentArgs),
     /// Time prefill and decode for one configuration.
     Bench {
         #[arg(long, default_value_t = 512)]
@@ -180,6 +190,10 @@ fn main() -> Result<()> {
         Cmd::Chat { system } => chat_repl(&cli, system.as_deref()),
         Cmd::Raw { case, chat_turn } => raw(&cli, case, *chat_turn),
         Cmd::Bench { prompt_tokens, gen_tokens } => bench(&cli, *prompt_tokens, *gen_tokens),
+        Cmd::Agent(args) => {
+            let code = agent_cmd::run(&cli, args)?;
+            std::process::exit(code);
+        }
     }
 }
 
@@ -295,11 +309,16 @@ fn gen_params(gen_args: &GenArgs) -> GenParams {
     }
 }
 
-fn load_tools(gen_args: &GenArgs) -> Result<ToolSet> {
-    Ok(match &gen_args.tools {
+/// The tools for `run` and `chat`: exactly the entries of the `--tools` file, if one was given.
+fn load_tools(gen_args: &GenArgs) -> Result<Registry> {
+    let set = match &gen_args.tools {
         Some(p) => ToolSet::load(p)?,
         None => ToolSet::default(),
-    })
+    };
+    let workspace = Workspace::new(&std::env::current_dir()?, &[]).context("opening the current directory")?;
+    let mut registry = Registry::new(ToolCtx::new(workspace));
+    set.register_into(&mut registry)?;
+    Ok(registry)
 }
 
 fn vram_mib() -> Option<u64> {
@@ -318,20 +337,76 @@ fn run(cli: &Cli, prompt: &str, system: Option<&str>) -> Result<()> {
         messages.push(Message::new("system", s));
     }
     messages.push(Message::new("user", prompt));
-    let opts = turn::TurnOptions {
-        engine: &engine,
-        tools: &tools,
-        thinking: !cli.gen_args.no_think,
-        params: gen_params(&cli.gen_args),
-        show_reasoning: !cli.gen_args.quiet_reasoning,
-    };
-    let report = turn::run_turn(&mut messages, &opts)?;
+    let report = run_turn(cli, &engine, &tools, &mut messages)?;
     println!();
     print_stats(&report);
     Ok(())
 }
 
-fn print_stats(report: &turn::TurnReport) {
+/// Runs one user turn through the agent loop and prints its events the way the CLI always has:
+/// the answer on stdout, everything else on stderr.
+fn run_turn(cli: &Cli, engine: &Engine, tools: &Registry, messages: &mut Vec<Message>) -> Result<TurnReport> {
+    let backend = EngineBackend { engine };
+    // run and chat: the --tools file is the allowlist, so nothing asks.
+    let policy = Policy::allow_all();
+    let agent = Agent {
+        backend: &backend,
+        tools,
+        policy: &policy,
+        config: AgentConfig::new(!cli.gen_args.no_think, gen_params(&cli.gen_args)),
+        cancel: Arc::new(AtomicBool::new(false)),
+    };
+    let show_reasoning = !cli.gen_args.quiet_reasoning;
+    let max_rounds = agent.config.max_rounds;
+    let mut show = |ev: AgentEvent| print_event(ev, show_reasoning, max_rounds, false);
+    Ok(agent.run_turn(messages, &mut show)?)
+}
+
+fn print_event(ev: AgentEvent, show_reasoning: bool, max_rounds: usize, verbose: bool) {
+    match ev {
+        AgentEvent::Reasoning(t) => {
+            if show_reasoning {
+                let _ = write!(stderr(), "{t}");
+                let _ = stderr().flush();
+            }
+        }
+        AgentEvent::Content(t) => {
+            let _ = write!(stdout(), "{t}");
+            let _ = stdout().flush();
+        }
+        AgentEvent::ToolCall { name, arguments } => {
+            let _ = writeln!(stderr(), "\n[tool call] {name} {}", serde_json::Value::Object(arguments));
+        }
+        AgentEvent::MalformedCall(_) => {
+            let _ = writeln!(stderr(), "\n[warning] malformed tool call kept as text");
+        }
+        AgentEvent::ToolResult { text, .. } => {
+            let shown = if verbose { text } else { truncate(&text, 200) };
+            let _ = writeln!(stderr(), "[tool result] {shown}");
+        }
+        AgentEvent::RoundStats(_) | AgentEvent::MessageAdded(_) => {}
+        AgentEvent::Compacted { stage, before, after } => {
+            let _ = writeln!(stderr(), "\n[context compacted: stage {stage}, {before} -> {after} tokens]");
+        }
+        AgentEvent::Finished(Reason::RoundLimit) => {
+            let _ = writeln!(stderr(), "\n[stopped after {max_rounds} tool rounds]");
+        }
+        AgentEvent::Finished(Reason::Answered) => {}
+        AgentEvent::Finished(other) => {
+            let _ = writeln!(stderr(), "\n[stopped: {}]", other.as_str());
+        }
+    }
+}
+
+fn truncate(s: &str, n: usize) -> String {
+    if s.chars().count() <= n {
+        s.to_string()
+    } else {
+        format!("{}...", s.chars().take(n).collect::<String>())
+    }
+}
+
+fn print_stats(report: &TurnReport) {
     for s in &report.stats {
         let gen_tps = if s.gen_ms > 0.0 { s.generated as f64 / (s.gen_ms / 1e3) } else { 0.0 };
         let prompt_tps = if s.prompt_ms > 0.0 {
@@ -385,14 +460,7 @@ fn chat_repl(cli: &Cli, system: Option<&str>) -> Result<()> {
         messages.push(Message::new("user", line));
         print!("dory> ");
         let _ = stdout().flush();
-        let opts = turn::TurnOptions {
-            engine: &engine,
-            tools: &tools,
-            thinking: !cli.gen_args.no_think,
-            params: gen_params(&cli.gen_args),
-            show_reasoning: !cli.gen_args.quiet_reasoning,
-        };
-        let report = turn::run_turn(&mut messages, &opts)?;
+        let report = run_turn(cli, &engine, &tools, &mut messages)?;
         println!();
         print_stats(&report);
     }

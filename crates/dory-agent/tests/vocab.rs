@@ -1,13 +1,14 @@
 //! Checks the model's control tokens against the tool-output sanitizer.
 //!
 //! Loads the vocabulary only (no GPU). Skipped when the model file is absent.
+//! `DORY_MODEL` overrides the model path.
 
 use std::path::PathBuf;
 
+use dory_agent::tools::sanitize_tool_output;
 use dory_engine::{
     model::{CacheMode, LoadOptions, Model},
     tokenize_model,
-    tools::sanitize_tool_output,
 };
 use dory_sys as sys;
 

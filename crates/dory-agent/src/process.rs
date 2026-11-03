@@ -14,7 +14,10 @@ use std::{
     os::unix::process::{CommandExt, ExitStatusExt},
     path::Path,
     process::{Command, Stdio},
-    sync::mpsc::{self, Receiver},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        mpsc::{self, Receiver},
+    },
     thread,
     time::{Duration, Instant},
 };
@@ -35,6 +38,8 @@ pub struct ProcessSpec<'a> {
     pub timeout: Duration,
     /// Maximum bytes kept per stream.
     pub limit: usize,
+    /// When set, the process group is killed as soon as this flag is raised.
+    pub cancel: Option<&'a AtomicBool>,
 }
 
 #[derive(Debug, Default, PartialEq)]
@@ -46,6 +51,8 @@ pub struct ProcessResult {
     pub timed_out: bool,
     /// Either stream dropped bytes to fit the limit.
     pub truncated: bool,
+    /// The cancel flag was raised, so the group was killed.
+    pub cancelled: bool,
     /// A grandchild held the pipes after the child exited, so the group was killed.
     pub orphans_killed: bool,
     /// Pipes that never closed in time are abandoned; their output is missing.
@@ -172,6 +179,11 @@ pub fn run_process(spec: &ProcessSpec) -> io::Result<ProcessResult> {
         if let Some(status) = child.try_wait()? {
             break status;
         }
+        if spec.cancel.is_some_and(|c| c.load(Ordering::Relaxed)) {
+            kill_group(pid);
+            result.cancelled = true;
+            break child.wait()?;
+        }
         if start.elapsed() >= spec.timeout {
             kill_group(pid);
             result.timed_out = true;
@@ -214,6 +226,7 @@ pub fn run_process(spec: &ProcessSpec) -> io::Result<ProcessResult> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Arc;
 
     fn argv(parts: &[&str]) -> Vec<String> {
         parts.iter().map(|s| s.to_string()).collect()
@@ -221,7 +234,7 @@ mod tests {
 
     fn run(parts: &[&str], stdin: &[u8], timeout: Duration, limit: usize) -> ProcessResult {
         let a = argv(parts);
-        run_process(&ProcessSpec { argv: &a, stdin, cwd: None, env: None, timeout, limit }).unwrap()
+        run_process(&ProcessSpec { argv: &a, stdin, cwd: None, env: None, timeout, limit, cancel: None }).unwrap()
     }
 
     #[test]
@@ -309,6 +322,31 @@ mod tests {
     }
 
     #[test]
+    fn raising_the_cancel_flag_kills_the_group_promptly() {
+        let flag = Arc::new(AtomicBool::new(false));
+        let raiser = flag.clone();
+        std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(200));
+            raiser.store(true, Ordering::Relaxed);
+        });
+        let a = argv(&["sh", "-c", "sleep 100"]);
+        let start = Instant::now();
+        let r = run_process(&ProcessSpec {
+            argv: &a,
+            stdin: b"",
+            cwd: None,
+            env: None,
+            timeout: Duration::from_secs(60),
+            limit: 1024,
+            cancel: Some(&flag),
+        })
+        .unwrap();
+        assert!(r.cancelled, "{r:?}");
+        assert!(!r.timed_out);
+        assert!(start.elapsed() < Duration::from_secs(5), "took {:?}", start.elapsed());
+    }
+
+    #[test]
     fn env_is_cleared_when_requested() {
         let a = argv(&["sh", "-c", "echo ${SECRET_FOR_TEST:-unset}"]);
         let r = run_process(&ProcessSpec {
@@ -318,6 +356,7 @@ mod tests {
             env: Some(vec![("PATH".into(), std::env::var("PATH").unwrap_or_default())]),
             timeout: Duration::from_secs(5),
             limit: 1024,
+            cancel: None,
         })
         .unwrap();
         assert_eq!(r.stdout, b"unset\n");

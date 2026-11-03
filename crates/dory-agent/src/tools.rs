@@ -10,10 +10,14 @@ use std::{path::Path, time::Duration};
 use serde::Deserialize;
 use serde_json::{Map, Value};
 
-use crate::{
+use dory_engine::{
     chat::ToolDef,
     error::{Error, Result},
+};
+
+use crate::{
     process::{ProcessResult, ProcessSpec, run_process},
+    tool::{Registry, Risk, Tool, ToolCtx, ToolOutcome},
 };
 
 const TIMEOUT: Duration = Duration::from_secs(10);
@@ -22,7 +26,7 @@ const MAX_OUTPUT: usize = 16 * 1024;
 /// Literal control sequences and tag strings that must not reach the model from tool output.
 /// The prompt is tokenized with special tokens on, so any of these in a tool result would become
 /// a real control token (a forged turn) or a token the model reads as formatting.
-/// `tests/vocab.rs` checks the whole control-token list of the model against this function.
+/// `dory-engine/tests/vocab.rs` checks the whole control-token list of the model against this function.
 const NEUTRALIZE: &[&str] = &[
     "<s>", "</s>", "<unk>", "[INST]", "[/INST]", "[AVAILABLE_TOOLS]", "[/AVAILABLE_TOOLS]", "[TOOL_RESULTS]",
     "[/TOOL_RESULTS]", "[TOOL_CALLS]", "<tool_call>", "</tool_call>", "<function=", "</function>", "<parameter=",
@@ -78,6 +82,61 @@ pub struct ToolEntry {
     pub exec: Option<Vec<String>>,
 }
 
+impl ToolEntry {
+    pub fn def(&self) -> ToolDef {
+        ToolDef { name: self.name.clone(), description: self.description.clone(), parameters: self.parameters.clone() }
+    }
+}
+
+/// Runs an entry's command with the arguments on stdin.
+pub fn run_external(entry: &ToolEntry, args: &Map<String, Value>) -> ToolOutcome {
+    let Some(argv) = entry.exec.as_ref().filter(|a| !a.is_empty()) else {
+        return ToolOutcome::err(format!("tool '{}' has no exec entry", entry.name));
+    };
+    if let Err(msg) = check_required(entry, args) {
+        return ToolOutcome::err(msg);
+    }
+    let input = match serde_json::to_vec(args) {
+        Ok(v) => v,
+        Err(e) => return ToolOutcome::err(e.to_string()),
+    };
+    let spec = ProcessSpec { argv, stdin: &input, cwd: None, env: None, timeout: TIMEOUT, limit: MAX_OUTPUT, cancel: None };
+    match run_process(&spec) {
+        Ok(result) if result.timed_out => {
+            ToolOutcome::err(format!("'{}' timed out after {}s", entry.name, TIMEOUT.as_secs()))
+        }
+        Ok(result) => ToolOutcome {
+            text: render_output(&result),
+            is_error: !result.success(),
+            truncated: result.truncated,
+        },
+        Err(e) => ToolOutcome::err(format!("cannot start {}: {e}", argv[0])),
+    }
+}
+
+/// An entry from a `--tools` file. Its command can do anything, so it is always `Execute`.
+pub struct ExternalTool {
+    pub entry: ToolEntry,
+}
+
+impl Tool for ExternalTool {
+    fn name(&self) -> &str {
+        &self.entry.name
+    }
+
+    fn def(&self) -> ToolDef {
+        self.entry.def()
+    }
+
+    fn risk(&self, _args: &Map<String, Value>, _ctx: &ToolCtx) -> Risk {
+        Risk::Execute
+    }
+
+    fn run(&self, args: &Map<String, Value>, _ctx: &ToolCtx) -> ToolOutcome {
+        run_external(&self.entry, args)
+    }
+}
+
 #[derive(Clone, Debug, Default)]
 pub struct ToolSet {
     pub entries: Vec<ToolEntry>,
@@ -92,48 +151,27 @@ impl ToolSet {
     }
 
     pub fn defs(&self) -> Vec<ToolDef> {
-        self.entries
-            .iter()
-            .map(|t| ToolDef {
-                name: t.name.clone(),
-                description: t.description.clone(),
-                parameters: t.parameters.clone(),
-            })
-            .collect()
+        self.entries.iter().map(ToolEntry::def).collect()
     }
 
     pub fn schemas(&self) -> std::collections::HashMap<String, Value> {
         self.entries.iter().map(|t| (t.name.clone(), t.parameters.clone())).collect()
     }
 
-    /// Runs a tool call. Errors become the tool's response text, so the model can recover.
-    pub fn call(&self, name: &str, args: &Map<String, Value>) -> String {
-        match self.try_call(name, args) {
-            Ok(out) => out,
-            Err(e) => format!("error: {e}"),
+    /// Adds every entry to a registry, in file order.
+    pub fn register_into(&self, registry: &mut Registry) -> Result<()> {
+        for entry in &self.entries {
+            registry.add(Box::new(ExternalTool { entry: entry.clone() }))?;
         }
+        Ok(())
     }
 
-    fn try_call(&self, name: &str, args: &Map<String, Value>) -> Result<String> {
-        let entry = self
-            .entries
-            .iter()
-            .find(|t| t.name == name)
-            .ok_or_else(|| Error::Tool(format!("unknown tool '{name}'")))?;
-        let argv = entry
-            .exec
-            .as_ref()
-            .filter(|a| !a.is_empty())
-            .ok_or_else(|| Error::Tool(format!("tool '{name}' has no exec entry")))?;
-        check_required(entry, args)?;
-
-        let input = serde_json::to_vec(args).map_err(|e| Error::Tool(e.to_string()))?;
-        let spec = ProcessSpec { argv, stdin: &input, cwd: None, env: None, timeout: TIMEOUT, limit: MAX_OUTPUT };
-        let result = run_process(&spec).map_err(|e| Error::Tool(format!("cannot start {}: {e}", argv[0])))?;
-        if result.timed_out {
-            return Err(Error::Tool(format!("'{name}' timed out after {}s", TIMEOUT.as_secs())));
+    /// Runs a tool call. Errors become the tool's response text, so the model can recover.
+    pub fn call(&self, name: &str, args: &Map<String, Value>) -> String {
+        match self.entries.iter().find(|t| t.name == name) {
+            Some(entry) => run_external(entry, args).text,
+            None => ToolOutcome::err(format!("unknown tool '{name}'")).text,
         }
-        Ok(render_output(&result))
     }
 }
 
@@ -165,11 +203,11 @@ pub fn render_output(r: &ProcessResult) -> String {
     out
 }
 
-fn check_required(entry: &ToolEntry, args: &Map<String, Value>) -> Result<()> {
+fn check_required(entry: &ToolEntry, args: &Map<String, Value>) -> std::result::Result<(), String> {
     let required = entry.parameters.get("required").and_then(Value::as_array);
     for key in required.into_iter().flatten().filter_map(Value::as_str) {
         if !args.contains_key(key) {
-            return Err(Error::Tool(format!("'{}' is missing required argument '{key}'", entry.name)));
+            return Err(format!("'{}' is missing required argument '{key}'", entry.name));
         }
     }
     Ok(())

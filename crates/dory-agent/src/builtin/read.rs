@@ -303,6 +303,10 @@ impl Tool for SearchFiles {
                     continue;
                 }
             }
+            // Secret files are never searched: a match would show their contents.
+            if ctx.workspace.hides_from_reads(&file) {
+                continue;
+            }
             let Ok(meta) = fs::metadata(&file) else { continue };
             if meta.len() > MAX_FILE_BYTES {
                 continue;

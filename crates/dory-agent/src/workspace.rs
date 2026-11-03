@@ -85,6 +85,37 @@ impl Workspace {
         &self.root
     }
 
+    /// Whether a file under the root must be kept from the tools: it looks like a secret and
+    /// `--allow-path` does not name it. Used by tools that read many files at once.
+    pub fn hides_from_reads(&self, abs: &Path) -> bool {
+        match abs.strip_prefix(&self.root) {
+            Ok(rel) => self.is_secret(rel) && !self.allowed_by_user(rel),
+            Err(_) => true,
+        }
+    }
+
+    /// Files in the workspace that look like secrets and are not allowed by `--allow-path`. Ignored
+    /// files are included: a `.gitignore`d `.env` is still a secret. `.git` is skipped.
+    pub fn secret_files(&self) -> Vec<PathBuf> {
+        let walker = ignore::WalkBuilder::new(&self.root)
+            .standard_filters(false)
+            .hidden(false)
+            .require_git(false)
+            .filter_entry(|e| e.file_name() != ".git")
+            .build();
+        let mut out = Vec::new();
+        for entry in walker.flatten() {
+            if !entry.file_type().is_some_and(|t| t.is_file()) {
+                continue;
+            }
+            let Ok(rel) = entry.path().strip_prefix(&self.root) else { continue };
+            if self.is_secret(rel) && !self.allowed_by_user(rel) {
+                out.push(entry.path().to_path_buf());
+            }
+        }
+        out
+    }
+
     /// Resolves a model-supplied path to an absolute path inside the workspace.
     pub fn resolve(&self, path: &str, access: Access) -> Result<PathBuf, PathError> {
         if path.contains('\0') {

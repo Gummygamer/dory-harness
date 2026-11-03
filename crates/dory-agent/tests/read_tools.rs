@@ -162,6 +162,15 @@ fn search_finds_matches_and_skips_ignored_and_binary_files() {
 }
 
 #[test]
+fn search_never_shows_lines_from_secret_files() {
+    let f = fixture();
+    fs::write(f._dir.path().join(".env"), "SECRET=sk-FAKE-search\n").unwrap();
+    let out = call(&f, "search_files", json!({"pattern": "SECRET"}));
+    assert!(!out.text.contains("sk-FAKE-search"), "{}", out.text);
+    assert_eq!(out.text, "no matches");
+}
+
+#[test]
 fn search_glob_and_no_match() {
     let f = fixture();
     let out = call(&f, "search_files", json!({"pattern": "fn ", "glob": "*.rs"})).text;

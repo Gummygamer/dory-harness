@@ -118,9 +118,10 @@ Limits, stated plainly:
 
 - The file-path checks confine the file tools only. A command can read anything the user can. Use
   `full` only on trusted input, and the sandbox limits what a command can write and reach.
-- A command can read `.env` and other secret files, because the file-tool rule does not apply to
-  commands. In the evaluation (`scripts/agent_eval/run_eval.py`, one seed), two of three security tasks
-  leaked a fake secret this way in `full` mode.
+- Inside the sandbox, each secret-looking file in the project is replaced by an empty file for the
+  command, so `cat .env` shows nothing. This covers only sandboxed commands: with `--sandbox none` a
+  command reads secret files like any other. Files named by `--allow-path` are not masked. Search skips
+  secret files too.
 - Injection is not solved. A model can still follow plain instructions in a file. Approval, the sandbox,
   no network by default and the cleared environment are the protections.
 - A value containing the exact closing sequence of a parameter cannot be written reliably; the parser

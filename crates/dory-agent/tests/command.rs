@@ -137,6 +137,35 @@ fn hidden_key_folders_show_nothing_under_bwrap() {
 }
 
 #[test]
+fn secret_files_in_the_workspace_read_as_empty_under_bwrap() {
+    let root = scratch("mask");
+    fs::write(root.join(".env"), "SECRET=sk-FAKE-mask").unwrap();
+    fs::create_dir_all(root.join("svc")).unwrap();
+    fs::write(root.join("svc/deploy.pem"), "PEM-FAKE-mask").unwrap();
+    fs::write(root.join("open.txt"), "visible").unwrap();
+    let Some(cfg) = sandbox_or_skip(None) else { return };
+    let reg = registry(&root, cfg, false, None);
+    let out = run(&reg, "cat .env; cat svc/deploy.pem; cat open.txt; echo end");
+    assert!(!out.text.contains("sk-FAKE-mask") && !out.text.contains("PEM-FAKE-mask"), "{}", out.text);
+    assert!(out.text.contains("visible"), "{}", out.text);
+    // The files themselves are untouched on the host.
+    assert_eq!(fs::read_to_string(root.join(".env")).unwrap(), "SECRET=sk-FAKE-mask");
+}
+
+#[test]
+fn an_allowed_secret_path_is_not_masked() {
+    let root = scratch("mask-allow");
+    fs::write(root.join(".env"), "SECRET=sk-FAKE-allowed").unwrap();
+    let Some(cfg) = sandbox_or_skip(None) else { return };
+    let mut ctx = ToolCtx::new(Workspace::new(&root, &[".env".to_string()]).unwrap());
+    ctx.scratch = None;
+    let mut reg = Registry::new(ctx);
+    reg.add(Box::new(RunCommand { sandbox: cfg, env_pass: vec![], require_sandbox: false, default_timeout_secs: 120 })).unwrap();
+    let out = run(&reg, "cat .env");
+    assert!(out.text.contains("sk-FAKE-allowed"), "{}", out.text);
+}
+
+#[test]
 fn the_network_is_unreachable_by_default_under_bwrap() {
     let root = scratch("net");
     let Some(cfg) = sandbox_or_skip(None) else { return };

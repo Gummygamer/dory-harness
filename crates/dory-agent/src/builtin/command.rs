@@ -123,7 +123,8 @@ impl Tool for RunCommand {
         let inner = vec!["bash".to_string(), "-c".to_string(), format!("exec 2>&1\n{}", a.command)];
         let (argv, sandboxed) = match (&self.sandbox.bwrap, self.sandbox.mode) {
             (Some(bwrap), SandboxMode::Auto | SandboxMode::Bwrap) => {
-                (sandbox::wrap(&self.sandbox, bwrap, ctx.workspace.root(), &cwd, &inner), true)
+                let masks = ctx.workspace.secret_files();
+                (sandbox::wrap(&self.sandbox, bwrap, ctx.workspace.root(), &cwd, &masks, &inner), true)
             }
             (None, SandboxMode::Bwrap) => {
                 return ToolOutcome::err("bwrap is required by --sandbox bwrap but is not available here");

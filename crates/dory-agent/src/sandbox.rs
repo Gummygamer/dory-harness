@@ -80,8 +80,17 @@ pub fn probe_bwrap() -> Option<PathBuf> {
     ok.then_some(bwrap)
 }
 
-/// The full argv for running `inner` (a program and its arguments) inside the sandbox.
-pub fn wrap(cfg: &SandboxConfig, bwrap: &Path, workspace: &Path, cwd: &Path, inner: &[String]) -> Vec<String> {
+/// The full argv for running `inner` (a program and its arguments) inside the sandbox. Each path in
+/// `masks` is replaced by an empty file, so a command reads nothing from it (secret files in the
+/// workspace; see `Workspace::secret_files`).
+pub fn wrap(
+    cfg: &SandboxConfig,
+    bwrap: &Path,
+    workspace: &Path,
+    cwd: &Path,
+    masks: &[PathBuf],
+    inner: &[String],
+) -> Vec<String> {
     let mut a: Vec<String> = [
         "--unshare-all",
         "--die-with-parent",
@@ -106,6 +115,10 @@ pub fn wrap(cfg: &SandboxConfig, bwrap: &Path, workspace: &Path, cwd: &Path, inn
     bind(workspace);
     for dir in &cfg.writable {
         bind(dir);
+    }
+    // Later mounts win: the masks go after the workspace bind they sit inside.
+    for file in masks {
+        a.extend(["--ro-bind".to_string(), "/dev/null".to_string(), file.display().to_string()]);
     }
     if let Some(home) = &cfg.home {
         for sub in HIDDEN_HOME_DIRS {

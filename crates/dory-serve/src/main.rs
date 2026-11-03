@@ -47,13 +47,13 @@ const KNOWN_FIELDS: &[&str] = &[
     "seed", "chat_template_kwargs", "n", "user",
 ];
 
-const DEFAULT_MODEL: &str = "/path/to/drive/models/dory/NVIDIA-Nemotron-Labs-Dory1.0-4B-Q5_K_M.gguf";
 const MODEL_ID: &str = "dory";
 
 #[derive(Parser)]
 #[command(name = "dory-serve", about = "OpenAI-style chat endpoint for Nemotron Dory (local)")]
 struct Args {
-    #[arg(long, default_value = DEFAULT_MODEL)]
+    /// Path to the GGUF file (its SHA-256 must match the pin). Defaults to $DORY_MODEL.
+    #[arg(long, env = "DORY_MODEL")]
     model: PathBuf,
     #[arg(long, default_value_t = 2)]
     loops: u32,

@@ -26,6 +26,10 @@ The plans are in `docs/`: `RUST_HARNESS_PLAN.md`, `RUST_HARNESS_FIX_PLAN.md` and
     target/release/dory-cli --tools examples/tools.json chat
     target/release/dory-serve --ctx 4096 --port 8080
 
+Both binaries read the model from `--model` or the `DORY_MODEL` environment variable, so set
+`DORY_MODEL=/path/to/NVIDIA-Nemotron-Labs-Dory1.0-4B-Q5_K_M.gguf` once. The GPU tests and
+`scripts/loop_matrix.sh` (which also needs `LLAMA_SERVER`) use the same variables.
+
 Defaults: 2 loops, `last_loop`, 32K context, batch 2048, ubatch 512, all layers on GPU,
 flash attention auto, prefix reuse off, prefill `server` (see below), temp 1.0, top-p 0.95.
 

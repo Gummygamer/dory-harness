@@ -48,7 +48,7 @@ VRAM figures are MiB ÷ 1000, measured with `scripts/bench_grid.sh` after `n_out
 
 ### 1. Pin the dependency
 
-- Keep the fork at `/path/to/drive/src/llama.cpp-dory`.
+- Keep the fork in its own checkout (`llama.cpp-dory`), next to this repository.
 - Create the workspace in `src/dory-harness` on the same drive, with `CARGO_TARGET_DIR` there too, because the root disk has only 4 GB free.
 - Create three crates: `dory-sys`, `dory-engine` and `dory-cli`.
 - Have startup check the model's SHA-256 (`96080be49ffd67b916018b7bdef8c484762576fb52780e10ab98ac4978a660e0`) and the fork commit.
@@ -120,9 +120,9 @@ VRAM figures are MiB ÷ 1000, measured with `scripts/bench_grid.sh` after `n_out
 This is the `llama-server` configuration behind the final test, and it can serve as the reference in steps 5, 6 and 9.
 
 ```bash
-M=/path/to/drive
-$M/src/llama.cpp-dory/build/bin/llama-server \
-  -m $M/models/dory/NVIDIA-Nemotron-Labs-Dory1.0-4B-Q5_K_M.gguf \
+# LLAMA_SERVER: the fork's build/bin/llama-server. DORY_MODEL: the GGUF file.
+"$LLAMA_SERVER" \
+  -m "$DORY_MODEL" \
   --alias dory --host 127.0.0.1 --port 18080 \
   -ngl 999 --fit off -c 32768 -np 1 --jinja --reasoning on \
   --temp 1.0 --top-p 0.95 --top-k 0 --min-p 0 --repeat-penalty 1 \

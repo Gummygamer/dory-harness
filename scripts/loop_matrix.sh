@@ -7,9 +7,8 @@
 # Usage: [OUT=dir] scripts/loop_matrix.sh [max_tokens]
 set -uo pipefail
 HERE="$(cd "$(dirname "$0")/.." && pwd)"
-M=/path/to/drive
-SERVER="$M/src/llama.cpp-dory/build/bin/llama-server"
-MODEL="$M/models/dory/NVIDIA-Nemotron-Labs-Dory1.0-4B-Q5_K_M.gguf"
+SERVER="${LLAMA_SERVER:?set LLAMA_SERVER to the llama-server binary}"
+MODEL="${DORY_MODEL:?set DORY_MODEL to the GGUF file}"
 MAXTOK="${1:-600}"
 OUT="${OUT:-$HERE/../matrix}"   # kept next to the harness, on the big drive
 mkdir -p "$OUT"

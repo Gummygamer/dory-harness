@@ -2,8 +2,10 @@
 A: server with --ctx-checkpoints 0 vs saved harness output (single chunk).
 B: harness with --batch n-4 vs saved default-server output."""
 import glob, json, os, subprocess, sys, time, urllib.request
-M='/path/to/drive'
-D=M+'/src/dory-harness'; SAVED=M+'/src/matrix'; NOCK=M+'/src/matrix_nockpt'
+# Paths come from this repo's location: <parent>/dory-harness, with matrix dirs next to it.
+D=os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+M=os.path.dirname(os.path.dirname(D))
+SAVED=M+'/src/matrix'; NOCK=M+'/src/matrix_nockpt'
 sys.path.insert(0,D+'/scripts')
 from compare_reference import post, server_messages, server_tools
 CFG=[(1,'last_loop'),(2,'last_loop'),(4,'last_loop'),(2,'per_loop'),(4,'per_loop')]

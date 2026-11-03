@@ -1,16 +1,19 @@
 //! GPU integration tests. They load the real model, so run them one at a time:
 //!
-//!   cargo test -p dory-engine --test engine_gpu -- --ignored --test-threads=1
+//!   DORY_MODEL=/path/to/Dory.gguf cargo test -p dory-engine --test engine_gpu -- --ignored --test-threads=1
 
 use std::time::{Duration, Instant};
 
 use dory_engine::{CacheMode, Engine, EngineOptions, Error, Event, Finish, GenParams, LoadOptions};
 
-const MODEL: &str = "/path/to/drive/models/dory/NVIDIA-Nemotron-Labs-Dory1.0-4B-Q5_K_M.gguf";
+/// The GGUF file to load. Set `DORY_MODEL` to its path.
+fn model_path() -> String {
+    std::env::var("DORY_MODEL").expect("set DORY_MODEL to the path of the GGUF file")
+}
 
 fn engine(ctx: u32, prefix_reuse: bool) -> Engine {
     let mut o = EngineOptions::new(LoadOptions {
-        path: MODEL.into(),
+        path: model_path().into(),
         loops: 2,
         cache_mode: CacheMode::LastLoop,
         n_gpu_layers: -1,

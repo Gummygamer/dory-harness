@@ -2,7 +2,7 @@
 
 use std::{
     io::{BufRead, Write, stderr, stdin, stdout},
-    path::PathBuf,
+    path::{Path, PathBuf},
     process::Command,
     sync::{Arc, atomic::AtomicBool},
     time::Instant,
@@ -26,8 +26,6 @@ use dory_engine::{
     verify,
 };
 
-const DEFAULT_MODEL: &str = "/path/to/drive/models/dory/NVIDIA-Nemotron-Labs-Dory1.0-4B-Q5_K_M.gguf";
-
 mod agent_cmd;
 
 #[derive(Parser)]
@@ -43,9 +41,9 @@ struct Cli {
 
 #[derive(Args, Clone)]
 struct LoadArgs {
-    /// Path to the GGUF file (its SHA-256 must match the pin).
-    #[arg(long, global = true, default_value = DEFAULT_MODEL)]
-    model: PathBuf,
+    /// Path to the GGUF file (its SHA-256 must match the pin). Defaults to $DORY_MODEL.
+    #[arg(long, global = true, env = "DORY_MODEL")]
+    model: Option<PathBuf>,
     /// Recurrence loops, 1 to 4.
     #[arg(long, global = true, default_value_t = 2)]
     loops: u32,
@@ -179,9 +177,10 @@ fn main() -> Result<()> {
         .init();
     let cli = Cli::parse();
 
+    let model = cli.load.model_path()?;
     verify::verify_fork()?;
     eprintln!("checking model sha256 (about 8 s for 3.6 GB)...");
-    verify::verify_model(&cli.load.model)?;
+    verify::verify_model(model)?;
 
     match &cli.cmd {
         Cmd::Info => info(&cli.load),
@@ -197,9 +196,16 @@ fn main() -> Result<()> {
     }
 }
 
-fn engine_options(load: &LoadArgs, vocab_only: bool) -> EngineOptions {
+impl LoadArgs {
+    /// The GGUF path from `--model` or `DORY_MODEL`.
+    fn model_path(&self) -> Result<&Path> {
+        self.model.as_deref().context("no model given: pass --model or set DORY_MODEL to the GGUF file")
+    }
+}
+
+fn engine_options(load: &LoadArgs, vocab_only: bool) -> Result<EngineOptions> {
     let mut opts = EngineOptions::new(LoadOptions {
-        path: load.model.clone(),
+        path: load.model_path()?.to_path_buf(),
         loops: load.loops,
         cache_mode: load.cache_mode.into(),
         n_gpu_layers: load.gpu_layers,
@@ -216,7 +222,7 @@ fn engine_options(load: &LoadArgs, vocab_only: bool) -> EngineOptions {
         FlashArg::On => dory_engine::model::FlashAttn::On,
         FlashArg::Off => dory_engine::model::FlashAttn::Off,
     };
-    opts
+    Ok(opts)
 }
 
 fn start_engine(cli: &Cli) -> Result<Engine> {
@@ -229,7 +235,7 @@ fn start_engine(cli: &Cli) -> Result<Engine> {
         cli.load.ubatch,
         cli.load.gpu_layers
     );
-    let engine = Engine::start(engine_options(&cli.load, false)).context("starting the engine")?;
+    let engine = Engine::start(engine_options(&cli.load, false)?).context("starting the engine")?;
     let template = engine.info.chat_template.clone().unwrap_or_default();
     chat::check_template(&template)?;
     Ok(engine)
@@ -237,7 +243,7 @@ fn start_engine(cli: &Cli) -> Result<Engine> {
 
 fn info(load: &LoadArgs) -> Result<()> {
     let model = Model::load(&LoadOptions {
-        path: load.model.clone(),
+        path: load.model_path()?.to_path_buf(),
         loops: load.loops,
         cache_mode: load.cache_mode.into(),
         n_gpu_layers: 0,
@@ -245,7 +251,7 @@ fn info(load: &LoadArgs) -> Result<()> {
     })?;
     let template = model.chat_template().unwrap_or_default();
     chat::check_template(&template)?;
-    println!("model:              {}", load.model.display());
+    println!("model:              {}", load.model_path()?.display());
     println!("sha256:             ok ({})", verify::PINNED_MODEL_SHA256);
     println!("fork commit:        ok ({})", verify::PINNED_FORK_COMMIT);
     println!("chat template:      ok (Dory format)");
@@ -281,7 +287,7 @@ struct RenderCase {
 
 fn template(cli: &Cli, case_path: &PathBuf) -> Result<()> {
     let model = Model::load(&LoadOptions {
-        path: cli.load.model.clone(),
+        path: cli.load.model_path()?.to_path_buf(),
         loops: cli.load.loops,
         cache_mode: cli.load.cache_mode.into(),
         n_gpu_layers: 0,

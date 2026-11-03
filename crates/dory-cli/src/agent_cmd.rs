@@ -217,7 +217,7 @@ pub fn run(cli: &Cli, args: &AgentArgs) -> Result<i32> {
 
     // The session comes first: its scratch folder is where long command output goes.
     let header = json!({
-        "model": cli.load.model.display().to_string(),
+        "model": cli.load.model_path()?.display().to_string(),
         "loops": cli.load.loops,
         "cache": CacheMode::from(cli.load.cache_mode).as_str(),
         "schedule": format!("{:?}", cli.gen_args.prefill),

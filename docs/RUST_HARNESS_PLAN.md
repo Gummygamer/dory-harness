@@ -2,7 +2,9 @@
 
 **Written:** 2026-11-02
 
-**The PR solves it, so we don't need a native runtime.** Upstream llama.cpp still has no Dory support, because [PR #30306](https://github.com/ggml-org/llama.cpp/pull/30306) is open and unmerged. The PR head (`1c3cdd23787750814aa21a070dc4d6dc451af871`) was built with CUDA and runs the Q5_K_M file entirely on the RTX 3060. No Rust code exists yet; this is the plan for writing it.
+**Status (2026-11-02):** Implemented. Steps 1–9 are done, and the optional server from step 10 exists as `dory-serve`. Only the pin move in step 10 is open: [PR #30306](https://github.com/ggml-org/llama.cpp/pull/30306) is still open, with its head unchanged at `1c3cdd2`. The workspace has four crates (`dory-sys`, `dory-engine`, `dory-cli`, `dory-serve`), not the three listed in step 1. Results, checks and open items are in the top-level `README.md`; the later logit-gap and 64K fixes are in `RUST_HARNESS_FIX_PLAN.md`. The rest of this file is the original plan, kept as written.
+
+**The PR solves it, so we don't need a native runtime.** Upstream llama.cpp still has no Dory support, because [PR #30306](https://github.com/ggml-org/llama.cpp/pull/30306) is open and unmerged. The PR head (`1c3cdd23787750814aa21a070dc4d6dc451af871`) was built with CUDA and runs the Q5_K_M file entirely on the RTX 3060. When this plan was written no Rust code existed; the harness in this repo is the result.
 
 The final test used 2 loops, `last_loop` and a 32K context, and everything passed:
 
@@ -40,7 +42,7 @@ VRAM figures are MiB ÷ 1000, measured with `scripts/bench_grid.sh` after `n_out
 - **No context shifting:** the PR doesn't support it, and generation stopped at exactly 4096 tokens in the 4K runs. The harness has to budget tokens and fail clearly.
 - **Reasoning uses a lot of tokens:** a trivial question took 788 tokens, and the long-prompt runs used up their whole budget without answering. A low `max_tokens` can return empty content.
 - **`last_loop` trade-off:** the PR says it changes predictions, and that prefill chunk size matters. Batch size therefore has to be fixed and recorded.
-- **The `Modelfile`:** its `num_ctx 262144` can't fit, since 128K already runs out of memory. Ollama 0.23.2 also shows no sign of Dory support, though this was only checked by searching its binary, not by trying to load the model.
+- **The Ollama `Modelfile`** (kept outside this repo): its `num_ctx 262144` can't fit, since 128K already runs out of memory. Ollama 0.23.2 also shows no sign of Dory support, though this was only checked by searching its binary, not by trying to load the model.
 
 ## Steps
 
@@ -130,8 +132,8 @@ $M/src/llama.cpp-dory/build/bin/llama-server \
 ## Not tested yet
 
 - Partial GPU offload.
-- Contexts actually filled to 32K or beyond (the longest prompt was about 2,800 tokens).
-- A final answer at 1 or 4 loops.
+
+Both other items on the original list have since been covered. Contexts filled past 32K: a 60,572-token needle prompt at 64K context answered correctly, and an earlier 25,954-token prompt did too. Outputs at 1 and 4 loops: `scripts/loop_matrix.sh` compares 9 cases against `llama-server` in five configurations (1, 2 and 4 loops with `last_loop`; 2 and 4 loops with `per_loop`), with identical token IDs (see `README.md`).
 
 ## Sources
 

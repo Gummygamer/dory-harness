@@ -10,7 +10,9 @@ use std::process::Command;
 
 fn git(args: &[&str]) -> Option<String> {
     let out = Command::new("git").args(args).output().ok()?;
-    out.status.success().then(|| String::from_utf8_lossy(&out.stdout).trim().to_string())
+    out.status
+        .success()
+        .then(|| String::from_utf8_lossy(&out.stdout).trim().to_string())
 }
 
 pub fn emit() {
@@ -18,10 +20,17 @@ pub fn emit() {
     let mut parts = cargo_version.split('.');
     let (major, minor) = (parts.next().unwrap_or("0"), parts.next().unwrap_or("0"));
 
-    let version = match (git(&["rev-list", "--count", "HEAD"]), git(&["rev-parse", "--short=7", "HEAD"])) {
+    let version = match (
+        git(&["rev-list", "--count", "HEAD"]),
+        git(&["rev-parse", "--short=7", "HEAD"]),
+    ) {
         (Some(count), Some(hash)) => {
-            let dirty = git(&["status", "--porcelain", "--untracked-files=no"]).is_some_and(|s| !s.is_empty());
-            format!("{major}.{minor}.{count}+{hash}{}", if dirty { ".dirty" } else { "" })
+            let dirty = git(&["status", "--porcelain", "--untracked-files=no"])
+                .is_some_and(|s| !s.is_empty());
+            format!(
+                "{major}.{minor}.{count}+{hash}{}",
+                if dirty { ".dirty" } else { "" }
+            )
         }
         _ => format!("{cargo_version}+nogit"),
     };

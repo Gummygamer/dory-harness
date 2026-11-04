@@ -30,7 +30,9 @@ impl FromStr for SandboxMode {
             "auto" => Ok(SandboxMode::Auto),
             "bwrap" => Ok(SandboxMode::Bwrap),
             "none" => Ok(SandboxMode::None),
-            other => Err(format!("unknown sandbox mode '{other}' (auto, bwrap, none)")),
+            other => Err(format!(
+                "unknown sandbox mode '{other}' (auto, bwrap, none)"
+            )),
         }
     }
 }
@@ -55,7 +57,11 @@ impl SandboxConfig {
             network: false,
             writable: Vec::new(),
             home: std::env::var_os("HOME").map(PathBuf::from),
-            bwrap: if mode == SandboxMode::None { None } else { probe_bwrap() },
+            bwrap: if mode == SandboxMode::None {
+                None
+            } else {
+                probe_bwrap()
+            },
         }
     }
 
@@ -69,9 +75,18 @@ impl SandboxConfig {
 /// unprivileged user namespaces, so the binary's presence is not enough.
 pub fn probe_bwrap() -> Option<PathBuf> {
     let path = std::env::var_os("PATH")?;
-    let bwrap = std::env::split_paths(&path).map(|d| d.join("bwrap")).find(|p| p.is_file())?;
+    let bwrap = std::env::split_paths(&path)
+        .map(|d| d.join("bwrap"))
+        .find(|p| p.is_file())?;
     let ok = Command::new(&bwrap)
-        .args(["--unshare-all", "--die-with-parent", "--ro-bind", "/", "/", "true"])
+        .args([
+            "--unshare-all",
+            "--die-with-parent",
+            "--ro-bind",
+            "/",
+            "/",
+            "true",
+        ])
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
@@ -118,7 +133,11 @@ pub fn wrap(
     }
     // Later mounts win: the masks go after the workspace bind they sit inside.
     for file in masks {
-        a.extend(["--ro-bind".to_string(), "/dev/null".to_string(), file.display().to_string()]);
+        a.extend([
+            "--ro-bind".to_string(),
+            "/dev/null".to_string(),
+            file.display().to_string(),
+        ]);
     }
     if let Some(home) = &cfg.home {
         for sub in HIDDEN_HOME_DIRS {

@@ -28,7 +28,9 @@ fn serve(status: u16, body: Vec<u8>, delay: Duration) -> (String, mpsc::Receiver
     let base = format!("http://{}", listener.local_addr().unwrap());
     let (tx, rx) = mpsc::channel();
     thread::spawn(move || {
-        let Ok((mut stream, _)) = listener.accept() else { return };
+        let Ok((mut stream, _)) = listener.accept() else {
+            return;
+        };
         let _ = tx.send(read_request(&mut stream));
         thread::sleep(delay);
         let mut reply = format!(
@@ -59,7 +61,11 @@ fn read_request(stream: &mut std::net::TcpStream) -> String {
     let head = String::from_utf8_lossy(&data[..head_end]).to_string();
     let length = head
         .lines()
-        .find_map(|l| l.to_ascii_lowercase().strip_prefix("content-length:").and_then(|v| v.trim().parse::<usize>().ok()))
+        .find_map(|l| {
+            l.to_ascii_lowercase()
+                .strip_prefix("content-length:")
+                .and_then(|v| v.trim().parse::<usize>().ok())
+        })
         .unwrap_or(0);
     while data.len() < head_end + length {
         let n = stream.read(&mut buf).unwrap_or(0);
@@ -106,7 +112,9 @@ fn no_cancel() -> AtomicBool {
 #[test]
 fn tavily_returns_its_hits_and_sends_the_documented_request() {
     let (p, sent) = tavily_for(200, tavily_body());
-    let hits = p.search("quillfeed retry_after", 5, &no_cancel()).expect("hits");
+    let hits = p
+        .search("quillfeed retry_after", 5, &no_cancel())
+        .expect("hits");
     assert_eq!(hits.len(), 2);
     assert_eq!(hits[0].title, "Quillfeed changelog");
     assert_eq!(hits[0].url, "https://quillfeed.example/changelog");
@@ -114,8 +122,14 @@ fn tavily_returns_its_hits_and_sends_the_documented_request() {
 
     let request = sent.recv().unwrap();
     assert!(request.starts_with("POST /search HTTP/1.1"), "{request}");
-    assert!(request.contains("Authorization: Bearer SECRET-KEY-123"), "key must be sent as a bearer token: {request}");
-    assert!(request.contains(r#""query":"quillfeed retry_after""#), "{request}");
+    assert!(
+        request.contains("Authorization: Bearer SECRET-KEY-123"),
+        "key must be sent as a bearer token: {request}"
+    );
+    assert!(
+        request.contains(r#""query":"quillfeed retry_after""#),
+        "{request}"
+    );
     assert!(request.contains(r#""max_results":5"#), "{request}");
     assert!(request.contains(r#""search_depth":"basic""#), "{request}");
     assert!(request.contains(r#""include_answer":false"#), "{request}");
@@ -142,11 +156,20 @@ fn brave_returns_its_hits_and_sends_the_documented_request() {
     let (p, sent) = brave_for(200, brave_body());
     let hits = p.search("quill feed/retry", 3, &no_cancel()).expect("hits");
     assert_eq!(hits.len(), 2);
-    assert_eq!(hits[0].content, "3.4.0 added retry_after.", "Brave's description is the excerpt");
+    assert_eq!(
+        hits[0].content, "3.4.0 added retry_after.",
+        "Brave's description is the excerpt"
+    );
 
     let request = sent.recv().unwrap();
-    assert!(request.starts_with("GET /res/v1/web/search?q=quill%20feed%2Fretry&count=3 HTTP/1.1"), "{request}");
-    assert!(request.contains("X-Subscription-Token: SECRET-KEY-123"), "{request}");
+    assert!(
+        request.starts_with("GET /res/v1/web/search?q=quill%20feed%2Fretry&count=3 HTTP/1.1"),
+        "{request}"
+    );
+    assert!(
+        request.contains("X-Subscription-Token: SECRET-KEY-123"),
+        "{request}"
+    );
 }
 
 #[test]
@@ -170,7 +193,11 @@ fn each_status_code_becomes_the_error_the_model_can_act_on() {
     ];
     for (status, want) in cases {
         let (p, _) = tavily_for(*status, br#"{"detail":{"error":"x"}}"#.to_vec());
-        assert_eq!(p.search("q", 5, &no_cancel()), Err(want.clone()), "HTTP {status}");
+        assert_eq!(
+            p.search("q", 5, &no_cancel()),
+            Err(want.clone()),
+            "HTTP {status}"
+        );
     }
 }
 
@@ -186,9 +213,15 @@ fn an_unexpected_status_is_a_failure_that_says_which_one() {
 #[test]
 fn brave_429_is_a_quota_error_only_when_it_says_so() {
     let (p, _) = brave_for(429, br#"{"error":{"code":"QUOTA_LIMITED"}}"#.to_vec());
-    assert_eq!(p.search("q", 5, &no_cancel()), Err(SearchError::QuotaUsedUp));
+    assert_eq!(
+        p.search("q", 5, &no_cancel()),
+        Err(SearchError::QuotaUsedUp)
+    );
     let (p, _) = brave_for(429, br#"{"error":{"code":"RATE_LIMITED"}}"#.to_vec());
-    assert_eq!(p.search("q", 5, &no_cancel()), Err(SearchError::RateLimited));
+    assert_eq!(
+        p.search("q", 5, &no_cancel()),
+        Err(SearchError::RateLimited)
+    );
 }
 
 // ---- replies that are not what was expected ---------------------------------------------------
@@ -205,13 +238,19 @@ fn a_reply_that_is_not_json_is_an_error() {
 #[test]
 fn an_html_error_page_with_a_5xx_status_is_a_service_failure() {
     let (p, _) = tavily_for(502, b"<html><body>Bad gateway</body></html>".to_vec());
-    assert_eq!(p.search("q", 5, &no_cancel()), Err(SearchError::ServiceFailed(502)));
+    assert_eq!(
+        p.search("q", 5, &no_cancel()),
+        Err(SearchError::ServiceFailed(502))
+    );
 }
 
 #[test]
 fn json_of_the_wrong_shape_is_an_error() {
     let (p, _) = tavily_for(200, br#"{"results":"not a list"}"#.to_vec());
-    assert!(matches!(p.search("q", 5, &no_cancel()), Err(SearchError::Failed(_))));
+    assert!(matches!(
+        p.search("q", 5, &no_cancel()),
+        Err(SearchError::Failed(_))
+    ));
 }
 
 #[test]
@@ -242,7 +281,11 @@ fn a_server_that_never_answers_times_out() {
         &no_cancel(),
     );
     assert!(matches!(r, Err(SearchError::Failed(_))), "{r:?}");
-    assert!(started.elapsed() < Duration::from_secs(3), "took {:?}", started.elapsed());
+    assert!(
+        started.elapsed() < Duration::from_secs(3),
+        "took {:?}",
+        started.elapsed()
+    );
 }
 
 #[test]
@@ -256,11 +299,21 @@ fn cancel_during_a_slow_reply_returns_at_once() {
     });
     let started = Instant::now();
     let r = http::send(
-        Request { url: format!("{base}/search"), headers: vec![], body: None, timeout: Duration::from_secs(30), max_bytes: 1024 },
+        Request {
+            url: format!("{base}/search"),
+            headers: vec![],
+            body: None,
+            timeout: Duration::from_secs(30),
+            max_bytes: 1024,
+        },
         &cancel,
     );
     assert!(matches!(r, Err(SearchError::Cancelled)), "{r:?}");
-    assert!(started.elapsed() < Duration::from_secs(2), "took {:?}", started.elapsed());
+    assert!(
+        started.elapsed() < Duration::from_secs(2),
+        "took {:?}",
+        started.elapsed()
+    );
 }
 
 #[test]
@@ -268,7 +321,10 @@ fn a_search_already_cancelled_sends_nothing() {
     let cancel = AtomicBool::new(true);
     let (p, sent) = tavily_for(200, tavily_body());
     assert_eq!(p.search("q", 5, &cancel), Err(SearchError::Cancelled));
-    assert!(sent.recv_timeout(Duration::from_millis(300)).is_err(), "a request was sent after cancel");
+    assert!(
+        sent.recv_timeout(Duration::from_millis(300)).is_err(),
+        "a request was sent after cancel"
+    );
 }
 
 // ---- the key never reaches a message ----------------------------------------------------------
@@ -283,7 +339,10 @@ fn no_error_text_or_debug_print_contains_the_key() {
     let (p, _) = brave_for(429, br#"{"error":{"code":"QUOTA_LIMITED"}}"#.to_vec());
     texts.push(format!("{:?}", p.search("q", 5, &no_cancel())));
     // A connection that is refused, so the error comes from the transport.
-    let closed = TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap();
+    let closed = TcpListener::bind("127.0.0.1:0")
+        .unwrap()
+        .local_addr()
+        .unwrap();
     let refused = Tavily::new(SECRET, &format!("http://{closed}"));
     texts.push(format!("{:?}", refused.search("q", 5, &no_cancel())));
     texts.push(format!("{:?}", Tavily::new(SECRET, "http://127.0.0.1:1")));
@@ -295,7 +354,10 @@ fn no_error_text_or_debug_print_contains_the_key() {
 
 #[test]
 fn an_unreachable_service_is_a_failure_with_a_message() {
-    let closed = TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap();
+    let closed = TcpListener::bind("127.0.0.1:0")
+        .unwrap()
+        .local_addr()
+        .unwrap();
     let p = Tavily::new(SECRET, &format!("http://{closed}"));
     match p.search("q", 5, &no_cancel()) {
         Err(SearchError::Failed(msg)) => assert!(msg.contains("could not reach"), "{msg}"),
@@ -309,8 +371,14 @@ fn messages_for_the_model_say_what_to_do() {
         SearchError::RateLimited.to_string(),
         "the search quota is used up or rate-limited; answer without searching"
     );
-    assert_eq!(SearchError::KeyRejected.to_string(), "the search key was rejected");
-    assert_eq!(SearchError::ServiceFailed(500).to_string(), "the search service failed (HTTP 500)");
+    assert_eq!(
+        SearchError::KeyRejected.to_string(),
+        "the search key was rejected"
+    );
+    assert_eq!(
+        SearchError::ServiceFailed(500).to_string(),
+        "the search service failed (HTTP 500)"
+    );
 }
 
 // ---- the quota is reported and remembered (step 9) -----------------------------------------------
@@ -328,24 +396,40 @@ fn an_over_quota_reply_is_reported_and_recorded_and_a_later_success_clears_it() 
     let state_file = state::state_path(dir.path());
 
     // Over quota: the model is told, and the time is written to the state file.
-    let (base, _rx) = serve(432, br#"{"detail":{"error":"plan limit"}}"#.to_vec(), Duration::ZERO);
-    let tool = WebSearch::new(Box::new(Tavily::new(SECRET, &base)), 10).with_state_file(state_file.clone());
+    let (base, _rx) = serve(
+        432,
+        br#"{"detail":{"error":"plan limit"}}"#.to_vec(),
+        Duration::ZERO,
+    );
+    let tool = WebSearch::new(Box::new(Tavily::new(SECRET, &base)), 10)
+        .with_state_file(state_file.clone());
     let ctx = ToolCtx::new(Workspace::new(dir.path(), &[]).unwrap());
     let mut args = serde_json::Map::new();
     args.insert("query".into(), serde_json::Value::String("serde".into()));
     let out = tool.run(&args, &ctx);
     assert!(out.is_error);
-    assert!(out.text.contains("the search quota is used up"), "{}", out.text);
+    assert!(
+        out.text.contains("the search quota is used up"),
+        "{}",
+        out.text
+    );
     assert!(!out.text.contains(SECRET));
     let at = state::quota_used_up_at(&state_file).expect("the time is recorded");
     assert!(at.ends_with(" UTC"), "{at}");
     let stored = std::fs::read_to_string(&state_file).unwrap();
-    assert!(!stored.contains(SECRET), "the state file must not hold the key: {stored}");
+    assert!(
+        !stored.contains(SECRET),
+        "the state file must not hold the key: {stored}"
+    );
 
     // A later search that succeeds clears the record, because the quota has reset.
     let (base, _rx) = serve(200, tavily_body(), Duration::ZERO);
-    let tool = WebSearch::new(Box::new(Tavily::new(SECRET, &base)), 10).with_state_file(state_file.clone());
-    args.insert("query".into(), serde_json::Value::String("serde other".into()));
+    let tool = WebSearch::new(Box::new(Tavily::new(SECRET, &base)), 10)
+        .with_state_file(state_file.clone());
+    args.insert(
+        "query".into(),
+        serde_json::Value::String("serde other".into()),
+    );
     assert!(!tool.run(&args, &ctx).is_error);
     assert_eq!(state::quota_used_up_at(&state_file), None);
 }

@@ -19,9 +19,12 @@ use serde_json::{Map, Value};
 
 use crate::{
     backend::Backend,
-    compact::{KEEP_REASONING_TURNS, KEEP_RESULTS, SUMMARY_REQUEST, strip_old_reasoning, stub_old_results, with_summary},
+    compact::{
+        KEEP_REASONING_TURNS, KEEP_RESULTS, SUMMARY_REQUEST, strip_old_reasoning, stub_old_results,
+        with_summary,
+    },
     policy::{Policy, Verdict},
-    tool::Registry,
+    tool::{Registry, ToolOutcome},
     tools::sanitize_tool_output,
 };
 
@@ -41,7 +44,8 @@ const MAX_LENGTH_RETRIES: usize = 1;
 
 const ROUND_LIMIT_NOTE: &str = "The tool round limit has been reached. Answer now with what you have found so far. Do not call any tools.";
 const MALFORMED_HELP: &str = "error: this tool call was malformed and was not run. Write each call exactly as:\n<tool_call>\n<function=NAME>\n<parameter=NAME>\nVALUE\n</parameter>\n</function>\n</tool_call>";
-const EMPTY_NUDGE: &str = "Your last reply was empty. Answer the question, or call a tool if you need one.";
+const EMPTY_NUDGE: &str =
+    "Your last reply was empty. Answer the question, or call a tool if you need one.";
 const REASONING_CALL_NUDGE: &str = "Your tool call was written inside your reasoning, so it was not run. Tool calls must come after your reasoning, in the reply itself.";
 const REPEAT_REFUSAL: &str = "error: this exact call has already been made 3 times in this task and was not run. Try a different approach, or answer with what you have.";
 
@@ -78,16 +82,28 @@ impl AgentConfig {
 pub enum AgentEvent {
     Reasoning(String),
     Content(String),
-    ToolCall { name: String, arguments: Map<String, Value> },
+    ToolCall {
+        name: String,
+        arguments: Map<String, Value>,
+    },
     /// A tool call that could not be parsed. Its raw text stays in the assistant message.
     MalformedCall(String),
     /// A message was appended to the conversation. A front end can persist it here.
     MessageAdded(Message),
     /// The output the model will see, after sanitizing.
-    ToolResult { name: String, text: String },
+    ToolResult {
+        name: String,
+        text: String,
+        is_error: bool,
+        truncated: bool,
+    },
     RoundStats(GenStats),
     /// The conversation was shortened. `stage` is 1 (reasoning), 2 (old results) or 3 (summary).
-    Compacted { stage: u8, before: usize, after: usize },
+    Compacted {
+        stage: u8,
+        before: usize,
+        after: usize,
+    },
     Finished(Reason),
 }
 
@@ -168,7 +184,11 @@ struct TurnState {
 
 impl Agent<'_> {
     /// Appends the assistant replies and tool results to `messages`, until the turn ends.
-    pub fn run_turn(&self, messages: &mut Vec<Message>, on_event: &mut dyn FnMut(AgentEvent)) -> Result<TurnReport> {
+    pub fn run_turn(
+        &self,
+        messages: &mut Vec<Message>,
+        on_event: &mut dyn FnMut(AgentEvent),
+    ) -> Result<TurnReport> {
         let started = Instant::now();
         // The search budget is per task: each turn starts with a full one.
         self.tools.ctx.web_searches.set(0);
@@ -180,7 +200,11 @@ impl Agent<'_> {
         let mut final_round = false;
 
         loop {
-            if self.config.max_duration.is_some_and(|max| started.elapsed() >= max) {
+            if self
+                .config
+                .max_duration
+                .is_some_and(|max| started.elapsed() >= max)
+            {
                 return finish(on_event, report, Reason::TimeLimit);
             }
             if !final_round && report.rounds >= self.config.max_rounds {
@@ -192,21 +216,44 @@ impl Agent<'_> {
             report.rounds += 1;
 
             let mut tokens = self.prompt_tokens(messages, &defs, thinking)?;
-            if !self.fits(tokens) && !self.compact(messages, &defs, thinking, false, &mut tokens, on_event)?.0 {
+            if !self.fits(tokens)
+                && !self
+                    .compact(messages, &defs, thinking, false, &mut tokens, on_event)?
+                    .0
+            {
                 return finish(on_event, report, Reason::ContextFull);
             }
-            let round = match self.generate_round(messages, &defs, &schemas, thinking, seed, self.round_max_tokens(tokens), on_event) {
+            let round = match self.generate_round(
+                messages,
+                &defs,
+                &schemas,
+                thinking,
+                seed,
+                self.round_max_tokens(tokens),
+                on_event,
+            ) {
                 Ok(r) => r,
                 Err(e) if is_context_error(&e) => {
                     // The engine disagrees with the count. Retry only if compaction changed something.
-                    let (fits, changed) = self.compact(messages, &defs, thinking, true, &mut tokens, on_event)?;
+                    let (fits, changed) =
+                        self.compact(messages, &defs, thinking, true, &mut tokens, on_event)?;
                     if !fits || !changed {
                         return finish(on_event, report, Reason::ContextFull);
                     }
-                    let retry = self.generate_round(messages, &defs, &schemas, thinking, seed, self.round_max_tokens(tokens), on_event);
+                    let retry = self.generate_round(
+                        messages,
+                        &defs,
+                        &schemas,
+                        thinking,
+                        seed,
+                        self.round_max_tokens(tokens),
+                        on_event,
+                    );
                     match retry {
                         Ok(r) => r,
-                        Err(e) if is_context_error(&e) => return finish(on_event, report, Reason::ContextFull),
+                        Err(e) if is_context_error(&e) => {
+                            return finish(on_event, report, Reason::ContextFull);
+                        }
                         Err(e) => return Err(e),
                     }
                 }
@@ -243,9 +290,17 @@ impl Agent<'_> {
             if !round.calls.is_empty() || !round.malformed.is_empty() {
                 push_message(messages, on_event, assistant(&round, round.calls.clone()));
                 for call in &round.calls {
+                    // A turn may be cancelled while an approval or earlier tool call is in
+                    // progress. Never start a later call after that cancellation.
+                    if self.cancel.load(std::sync::atomic::Ordering::Relaxed) {
+                        return finish(on_event, report, Reason::Cancelled);
+                    }
                     report.tool_calls += 1;
                     let text = self.run_call(call, &mut st, on_event);
                     push_message(messages, on_event, Message::new("tool", &text));
+                    if self.cancel.load(std::sync::atomic::Ordering::Relaxed) {
+                        return finish(on_event, report, Reason::Cancelled);
+                    }
                 }
                 for _ in &round.malformed {
                     push_message(messages, on_event, Message::new("tool", MALFORMED_HELP));
@@ -268,7 +323,11 @@ impl Agent<'_> {
             if !round.content.trim().is_empty() {
                 push_message(messages, on_event, assistant(&round, Vec::new()));
                 // A length cut in the content is kept as the answer.
-                let reason = if round.stats.finish == Finish::Length { Reason::Length } else { Reason::Answered };
+                let reason = if round.stats.finish == Finish::Length {
+                    Reason::Length
+                } else {
+                    Reason::Answered
+                };
                 return finish(on_event, report, reason);
             }
             // No content and no call. A call written inside reasoning gets one nudge, as does an empty reply.
@@ -276,7 +335,11 @@ impl Agent<'_> {
             if call_in_reasoning && !st.nudged_reasoning {
                 st.nudged_reasoning = true;
                 push_message(messages, on_event, assistant(&round, Vec::new()));
-                push_message(messages, on_event, Message::new("user", REASONING_CALL_NUDGE));
+                push_message(
+                    messages,
+                    on_event,
+                    Message::new("user", REASONING_CALL_NUDGE),
+                );
                 continue;
             }
             if !call_in_reasoning && !st.nudged_empty {
@@ -292,14 +355,30 @@ impl Agent<'_> {
 
     /// Compacts the conversation now, whether or not it is over the limit (the REPL's `/compact`).
     /// Returns whether any stage changed it.
-    pub fn compact_now(&self, messages: &mut Vec<Message>, on_event: &mut dyn FnMut(AgentEvent)) -> Result<bool> {
+    pub fn compact_now(
+        &self,
+        messages: &mut Vec<Message>,
+        on_event: &mut dyn FnMut(AgentEvent),
+    ) -> Result<bool> {
         let defs = self.tools.defs();
         let mut tokens = self.prompt_tokens(messages, &defs, self.config.thinking)?;
-        let (_, changed) = self.compact(messages, &defs, self.config.thinking, true, &mut tokens, on_event)?;
+        let (_, changed) = self.compact(
+            messages,
+            &defs,
+            self.config.thinking,
+            true,
+            &mut tokens,
+            on_event,
+        )?;
         Ok(changed)
     }
 
-    fn prompt_tokens(&self, messages: &[Message], defs: &[ToolDef], thinking: bool) -> Result<usize> {
+    fn prompt_tokens(
+        &self,
+        messages: &[Message],
+        defs: &[ToolDef],
+        thinking: bool,
+    ) -> Result<usize> {
         let prompt = chat::render(messages, defs, thinking)?;
         self.backend.count_tokens(&prompt)
     }
@@ -308,12 +387,16 @@ impl Agent<'_> {
     fn fits(&self, tokens: usize) -> bool {
         let n_ctx = self.backend.n_ctx();
         let room = n_ctx.saturating_sub(tokens + self.config.margin);
-        (tokens as f64) <= n_ctx as f64 * self.config.compact_fraction && room >= self.config.min_round_tokens
+        (tokens as f64) <= n_ctx as f64 * self.config.compact_fraction
+            && room >= self.config.min_round_tokens
     }
 
     /// The most a round may generate after a prompt of `tokens`.
     fn round_max_tokens(&self, tokens: usize) -> u32 {
-        let room = self.backend.n_ctx().saturating_sub(tokens + self.config.margin);
+        let room = self
+            .backend
+            .n_ctx()
+            .saturating_sub(tokens + self.config.margin);
         (self.config.params.max_tokens as usize).min(room) as u32
     }
 
@@ -335,7 +418,11 @@ impl Agent<'_> {
             if strip_old_reasoning(messages, KEEP_REASONING_TURNS) > 0 {
                 *tokens = self.prompt_tokens(messages, defs, thinking)?;
                 changed = true;
-                on_event(AgentEvent::Compacted { stage: 1, before, after: *tokens });
+                on_event(AgentEvent::Compacted {
+                    stage: 1,
+                    before,
+                    after: *tokens,
+                });
             }
         }
         if force || !self.fits(*tokens) {
@@ -343,7 +430,11 @@ impl Agent<'_> {
             if stub_old_results(messages, KEEP_RESULTS) > 0 {
                 *tokens = self.prompt_tokens(messages, defs, thinking)?;
                 changed = true;
-                on_event(AgentEvent::Compacted { stage: 2, before, after: *tokens });
+                on_event(AgentEvent::Compacted {
+                    stage: 2,
+                    before,
+                    after: *tokens,
+                });
             }
         }
         if (force || !self.fits(*tokens)) && with_summary(messages, "").is_some() {
@@ -353,7 +444,11 @@ impl Agent<'_> {
                     *messages = shorter;
                     *tokens = self.prompt_tokens(messages, defs, thinking)?;
                     changed = true;
-                    on_event(AgentEvent::Compacted { stage: 3, before, after: *tokens });
+                    on_event(AgentEvent::Compacted {
+                        stage: 3,
+                        before,
+                        after: *tokens,
+                    });
                 }
             }
         }
@@ -372,13 +467,17 @@ impl Agent<'_> {
         if room < SUMMARY_MIN_TOKENS {
             return Ok(None);
         }
-        let params = GenParams { max_tokens: (SUMMARY_MAX_TOKENS as usize).min(room) as u32, ..self.config.params.clone() };
+        let params = GenParams {
+            max_tokens: (SUMMARY_MAX_TOKENS as usize).min(room) as u32,
+            ..self.config.params.clone()
+        };
         let mut text = String::new();
-        self.backend.generate(&prompt, &params, &self.cancel, &mut |ev| {
-            if let Event::Text(t) = ev {
-                text.push_str(&t);
-            }
-        })?;
+        self.backend
+            .generate(&prompt, &params, &self.cancel, &mut |ev| {
+                if let Event::Text(t) = ev {
+                    text.push_str(&t);
+                }
+            })?;
         Ok(Some(text))
     }
 
@@ -395,7 +494,11 @@ impl Agent<'_> {
         on_event: &mut dyn FnMut(AgentEvent),
     ) -> Result<Round> {
         let prompt = chat::render(messages, defs, thinking)?;
-        let params = GenParams { seed, max_tokens, ..self.config.params.clone() };
+        let params = GenParams {
+            seed,
+            max_tokens,
+            ..self.config.params.clone()
+        };
         let mut parser = StreamParser::new(thinking, schemas.clone());
         let mut reasoning = String::new();
         let mut content = String::new();
@@ -413,7 +516,10 @@ impl Agent<'_> {
                         on_event(AgentEvent::Content(t));
                     }
                     Piece::ToolCall { name, arguments } => {
-                        on_event(AgentEvent::ToolCall { name: name.clone(), arguments: arguments.clone() });
+                        on_event(AgentEvent::ToolCall {
+                            name: name.clone(),
+                            arguments: arguments.clone(),
+                        });
                         calls.push(ToolCall { name, arguments });
                     }
                     Piece::MalformedToolCall(raw) => {
@@ -425,39 +531,70 @@ impl Agent<'_> {
                 }
             }
         };
-        let stats = self.backend.generate(&prompt, &params, &self.cancel, &mut |ev| {
-            if let Event::Text(t) = ev {
-                handle(parser.push(&t));
-            }
-        })?;
+        let stats = self
+            .backend
+            .generate(&prompt, &params, &self.cancel, &mut |ev| {
+                if let Event::Text(t) = ev {
+                    handle(parser.push(&t));
+                }
+            })?;
         handle(parser.finish());
-        Ok(Round { reasoning, content, calls, malformed, stats })
+        Ok(Round {
+            reasoning,
+            content,
+            calls,
+            malformed,
+            stats,
+        })
     }
 
     /// Checks the call against the policy, then runs it. Returns the text the model will see.
-    fn execute(&self, call: &ToolCall) -> String {
+    fn execute(&self, call: &ToolCall) -> ToolOutcome {
         match self.tools.prepare(&call.name, &call.arguments) {
-            Err(outcome) => outcome.text,
+            Err(outcome) => outcome,
             Ok(tool) => match self.policy.check(tool, &call.arguments, &self.tools.ctx) {
-                Verdict::Refuse(text) => text,
-                Verdict::Run => tool.run(&call.arguments, &self.tools.ctx).text,
+                Verdict::Refuse(text) => ToolOutcome {
+                    text,
+                    is_error: true,
+                    truncated: false,
+                },
+                Verdict::Run => tool.run(&call.arguments, &self.tools.ctx),
             },
         }
     }
 
     /// Runs one call and returns the text the model will see. A call that is repeated too often is
     /// refused, and refusing it again ends the turn.
-    fn run_call(&self, call: &ToolCall, st: &mut TurnState, on_event: &mut dyn FnMut(AgentEvent)) -> String {
-        let key = format!("{}\u{1}{}", call.name, Value::Object(call.arguments.clone()));
+    fn run_call(
+        &self,
+        call: &ToolCall,
+        st: &mut TurnState,
+        on_event: &mut dyn FnMut(AgentEvent),
+    ) -> String {
+        let key = format!(
+            "{}\u{1}{}",
+            call.name,
+            Value::Object(call.arguments.clone())
+        );
         let seen = st.call_counts.entry(key).or_insert(0);
         *seen += 1;
-        let text = if *seen >= REPEAT_REFUSAL_AT {
+        let outcome = if *seen >= REPEAT_REFUSAL_AT {
             st.refusals += 1;
-            REPEAT_REFUSAL.to_string()
+            ToolOutcome {
+                text: REPEAT_REFUSAL.into(),
+                is_error: true,
+                truncated: false,
+            }
         } else {
-            sanitize_tool_output(&self.execute(call))
+            self.execute(call)
         };
-        on_event(AgentEvent::ToolResult { name: call.name.clone(), text: text.clone() });
+        let text = sanitize_tool_output(&outcome.text);
+        on_event(AgentEvent::ToolResult {
+            name: call.name.clone(),
+            text: text.clone(),
+            is_error: outcome.is_error,
+            truncated: outcome.truncated,
+        });
         text
     }
 }
@@ -479,11 +616,18 @@ fn assistant(round: &Round, tool_calls: Vec<ToolCall>) -> Message {
     }
 }
 
-fn finish(on_event: &mut dyn FnMut(AgentEvent), report: TurnReport, reason: Reason) -> Result<TurnReport> {
+fn finish(
+    on_event: &mut dyn FnMut(AgentEvent),
+    report: TurnReport,
+    reason: Reason,
+) -> Result<TurnReport> {
     on_event(AgentEvent::Finished(reason));
     Ok(report)
 }
 
 fn is_context_error(e: &Error) -> bool {
-    matches!(e, Error::PromptTooLong { .. } | Error::ContextExhausted { .. })
+    matches!(
+        e,
+        Error::PromptTooLong { .. } | Error::ContextExhausted { .. }
+    )
 }

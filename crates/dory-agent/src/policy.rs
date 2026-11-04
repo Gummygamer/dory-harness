@@ -9,6 +9,7 @@ use std::{
     fs::OpenOptions,
     io::{BufRead, BufReader, Write},
     os::unix::io::{AsRawFd, RawFd},
+    path::PathBuf,
     str::FromStr,
     sync::{
         Arc,
@@ -44,7 +45,9 @@ impl FromStr for Mode {
             "ask" => Ok(Mode::Ask),
             "auto-edit" => Ok(Mode::AutoEdit),
             "full" => Ok(Mode::Full),
-            other => Err(format!("unknown permission mode '{other}' (read-only, ask, auto-edit, full)")),
+            other => Err(format!(
+                "unknown permission mode '{other}' (read-only, ask, auto-edit, full)"
+            )),
         }
     }
 }
@@ -76,7 +79,11 @@ pub struct CommandRules {
 impl CommandRules {
     pub fn new(patterns: &[String]) -> Self {
         CommandRules {
-            prefixes: patterns.iter().map(|p| p.split_whitespace().map(str::to_string).collect()).filter(|v: &Vec<String>| !v.is_empty()).collect(),
+            prefixes: patterns
+                .iter()
+                .map(|p| p.split_whitespace().map(str::to_string).collect())
+                .filter(|v: &Vec<String>| !v.is_empty())
+                .collect(),
         }
     }
 
@@ -85,7 +92,9 @@ impl CommandRules {
             return false;
         }
         let words: Vec<&str> = command.split_whitespace().collect();
-        self.prefixes.iter().any(|p| p.len() <= words.len() && p.iter().zip(&words).all(|(a, b)| a == b))
+        self.prefixes
+            .iter()
+            .any(|p| p.len() <= words.len() && p.iter().zip(&words).all(|(a, b)| a == b))
     }
 }
 
@@ -100,7 +109,11 @@ pub struct Permissions {
 impl Permissions {
     /// What run and chat use: their `--tools` file is the allowlist, so nothing asks.
     pub fn allow_all() -> Self {
-        Permissions { mode: Mode::Full, commands: CommandRules::default(), allow_web: false }
+        Permissions {
+            mode: Mode::Full,
+            commands: CommandRules::default(),
+            allow_web: false,
+        }
     }
 
     /// `command` is the command text for `Execute` calls that have one.
@@ -139,6 +152,12 @@ pub struct Request {
     pub tool: String,
     /// What the user is approving, already cleaned of control characters.
     pub summary: String,
+    pub risk: Risk,
+    pub workspace: PathBuf,
+    pub working_directory: PathBuf,
+    pub arguments: Map<String, Value>,
+    pub command: Option<String>,
+    pub sandbox: Option<String>,
 }
 
 pub trait Approver {
@@ -157,7 +176,11 @@ fn wait_for_input(fd: RawFd, cancel: &AtomicBool) -> bool {
         if cancel.load(Ordering::Relaxed) {
             return false;
         }
-        let mut pfd = libc::pollfd { fd, events: libc::POLLIN, revents: 0 };
+        let mut pfd = libc::pollfd {
+            fd,
+            events: libc::POLLIN,
+            revents: 0,
+        };
         // Safety: one pollfd, valid for the call.
         let ready = unsafe { libc::poll(&mut pfd, 1, 100) };
         if ready != 0 {
@@ -173,8 +196,16 @@ impl Approver for TerminalApprover {
         };
         let mut out = tty.try_clone().expect("duplicate the terminal handle");
         let mut input = BufReader::new(tty);
-        let _ = writeln!(out, "\n[approval] {}\n{}", request.tool, strip_controls(&request.summary));
-        let _ = write!(out, "allow? [y]es / [n]o / [a]lways for this call / [m]essage the model: ");
+        let _ = writeln!(
+            out,
+            "\n[approval] {}\n{}",
+            request.tool,
+            strip_controls(&request.summary)
+        );
+        let _ = write!(
+            out,
+            "allow? [y]es / [n]o / [a]lways for this call / [m]essage the model: "
+        );
         let _ = out.flush();
         if !wait_for_input(input.get_ref().as_raw_fd(), &self.cancel) {
             let _ = writeln!(out);
@@ -211,7 +242,9 @@ impl Approver for NoTerminal {
 /// Removes control characters, so output from a tool or the model cannot move the cursor, clear
 /// the screen or hide a prompt. Newlines and tabs are kept.
 pub fn strip_controls(s: &str) -> String {
-    s.chars().filter(|c| !c.is_control() || *c == '\n' || *c == '\t').collect()
+    s.chars()
+        .filter(|c| !c.is_control() || *c == '\n' || *c == '\t')
+        .collect()
 }
 
 /// The verdict for one call.
@@ -230,7 +263,11 @@ pub struct Policy {
 
 impl Policy {
     pub fn new(permissions: Permissions, approver: Box<dyn Approver>) -> Self {
-        Policy { permissions, approver, remembered: RefCell::new(HashSet::new()) }
+        Policy {
+            permissions,
+            approver,
+            remembered: RefCell::new(HashSet::new()),
+        }
     }
 
     /// Nothing asks and nothing is refused for permissions. Used by run and chat.
@@ -253,15 +290,36 @@ impl Policy {
                 if self.remembered.borrow().contains(&key) {
                     return Verdict::Run;
                 }
-                let request = Request { tool: tool.name().to_string(), summary: strip_controls(&tool.summary(args, ctx)) };
+                let request = Request {
+                    tool: tool.name().to_string(),
+                    summary: strip_controls(&tool.summary(args, ctx)),
+                    risk,
+                    workspace: ctx.workspace.root().to_path_buf(),
+                    working_directory: args
+                        .get("cwd")
+                        .and_then(Value::as_str)
+                        .and_then(|p| {
+                            ctx.workspace
+                                .resolve(p, crate::workspace::Access::Read)
+                                .ok()
+                        })
+                        .unwrap_or_else(|| ctx.workspace.root().to_path_buf()),
+                    arguments: args.clone(),
+                    command: command.clone(),
+                    sandbox: ctx.command_sandbox.clone(),
+                };
                 match self.approver.ask(&request) {
                     Answer::Yes => Verdict::Run,
                     Answer::Always => {
                         self.remembered.borrow_mut().insert(key);
                         Verdict::Run
                     }
-                    Answer::No => Verdict::Refuse("error: the user did not approve this call".into()),
-                    Answer::NoWith(msg) => Verdict::Refuse(format!("error: the user declined this call: {msg}")),
+                    Answer::No => {
+                        Verdict::Refuse("error: the user did not approve this call".into())
+                    }
+                    Answer::NoWith(msg) => {
+                        Verdict::Refuse(format!("error: the user declined this call: {msg}"))
+                    }
                     Answer::Unavailable => {
                         let way_out = if risk == Risk::Network {
                             "or with --allow-web to allow searches"
@@ -306,7 +364,11 @@ mod tests {
             (Mode::Full, Risk::Write, None, Allow),
         ];
         for (mode, risk, cmd, want) in cases {
-            let p = Permissions { mode: *mode, commands: rules(&["cargo test"]), allow_web: false };
+            let p = Permissions {
+                mode: *mode,
+                commands: rules(&["cargo test"]),
+                allow_web: false,
+            };
             assert_eq!(p.decide(*risk, *cmd), *want, "{mode:?} {risk:?} {cmd:?}");
         }
     }
@@ -322,8 +384,16 @@ mod tests {
                     (_, true) | (Mode::Full, false) => Allow,
                     _ => Ask,
                 };
-                let p = Permissions { mode, commands: CommandRules::default(), allow_web };
-                assert_eq!(p.decide(Risk::Network, None), want, "{mode:?} allow_web={allow_web}");
+                let p = Permissions {
+                    mode,
+                    commands: CommandRules::default(),
+                    allow_web,
+                };
+                assert_eq!(
+                    p.decide(Risk::Network, None),
+                    want,
+                    "{mode:?} allow_web={allow_web}"
+                );
             }
         }
     }

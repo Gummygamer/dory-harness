@@ -15,16 +15,23 @@ The plans are in `docs/`: `RUST_HARNESS_PLAN.md`, `RUST_HARNESS_FIX_PLAN.md` and
   and session transcripts. It never prints; front ends render its events.
 - `dory-cli`: `dory info | template | run | chat | raw | bench | agent`. `raw --chat-turn` uses the chat endpoint's
   prefill breaks.
+- `dory-app` / `dory-gui`: shared typed desktop configuration, worker controller, and Linux GUI for plain chat
+  and workspace-agent sessions. See [docs/GUI.md](docs/GUI.md).
 - `dory-serve`: optional OpenAI-style `/v1/chat/completions` (streaming, tool calls returned to the
   client, one generation at a time). Binds to loopback unless `--allow-remote` is given.
 
 ## Build and run
 
-    cargo build --release -p dory-cli -p dory-serve
+    cargo build --release -p dory-cli -p dory-serve -p dory-gui
     target/release/dory-cli info
     target/release/dory-cli run "What is the capital of Portugal? Answer in one word."
     target/release/dory-cli --tools examples/tools.json chat
     target/release/dory-serve --ctx 4096 --port 8080
+    cd /path/to/project && DORY_MODEL=/path/to/NVIDIA-Nemotron-Labs-Dory1.0-4B-Q5_K_M.gguf /path/to/dory-harness/target/release/dory-gui
+    target/release/dory-gui --model /path/to/Dory.gguf --workspace /path/to/project
+    target/release/dory-gui --demo
+
+Create a local Linux bundle with `DORY_LLAMA_DIR=/path/to/llama.cpp-dory scripts/package_gui.sh`.
 
 Versions bump themselves: `dory-cli --version` and `dory-serve --version` (also `dory-cli info`) print
 `MAJOR.MINOR.COMMITS+HASH`, e.g. `0.1.19+d70498f`. MAJOR.MINOR come from the crate version in `Cargo.toml`

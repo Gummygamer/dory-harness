@@ -18,7 +18,10 @@ pub mod parse;
 pub mod prefill;
 pub mod verify;
 
-pub use engine::{CancelHandle, Engine, EngineOptions, Event, Finish, GenParams, GenStats, Generation, ModelInfo, tokenize_model};
-pub use prefill::PrefillSchedule;
+pub use engine::{
+    CancelHandle, Engine, EngineOptions, Event, Finish, GenParams, GenStats, Generation, ModelInfo,
+    tokenize_model,
+};
 pub use error::{Error, Result};
 pub use model::{CacheMode, LoadOptions};
+pub use prefill::PrefillSchedule;

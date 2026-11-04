@@ -13,7 +13,8 @@ use serde_json::{Map, Value};
 use crate::error::{Error, Result};
 
 /// SHA-256 of `tokenizer.chat_template` in `NVIDIA-Nemotron-Labs-Dory1.0-4B-Q5_K_M.gguf`.
-pub const TEMPLATE_SHA256: &str = "82753bef5cedc4932c1ed509b5c9a12be680fd86d1adb65bc3f7398d11c8eebc";
+pub const TEMPLATE_SHA256: &str =
+    "82753bef5cedc4932c1ed509b5c9a12be680fd86d1adb65bc3f7398d11c8eebc";
 
 /// Starts every user turn. The server finds user messages by matching these tokens, so it is shared.
 pub const USER_TURN: &str = "<|im_start|>user\n";
@@ -107,7 +108,11 @@ pub fn render(messages: &[Message], tools: &[ToolDef], enable_thinking: bool) ->
     for (i, m) in loop_messages.iter().enumerate() {
         let i = i as isize;
         // `loop.previtem` / `loop.nextitem` are absent at the ends of the list.
-        let prev_role = if i > 0 { Some(loop_messages[i as usize - 1].role.as_str()) } else { None };
+        let prev_role = if i > 0 {
+            Some(loop_messages[i as usize - 1].role.as_str())
+        } else {
+            None
+        };
         let next_role = loop_messages.get(i as usize + 1).map(|n| n.role.as_str());
         let is_last = next_role.is_none();
         match m.role.as_str() {
@@ -165,7 +170,10 @@ fn render_tool(out: &mut String, tool: &ToolDef) {
     }
     out.push_str("\n<parameters>");
     let params = tool.parameters.as_object();
-    if let Some(props) = params.and_then(|p| p.get("properties")).and_then(Value::as_object) {
+    if let Some(props) = params
+        .and_then(|p| p.get("properties"))
+        .and_then(Value::as_object)
+    {
         for (name, fields) in props {
             out.push_str("\n<parameter>\n<name>");
             out.push_str(name);
@@ -185,7 +193,11 @@ fn render_tool(out: &mut String, tool: &ToolDef) {
                 out.push_str(&to_json(en));
                 out.push_str("</enum>");
             }
-            render_extra_keys(out, fields.as_object(), &["name", "type", "description", "enum"]);
+            render_extra_keys(
+                out,
+                fields.as_object(),
+                &["name", "type", "description", "enum"],
+            );
             out.push_str("\n</parameter>");
         }
     }
@@ -197,7 +209,11 @@ fn render_tool(out: &mut String, tool: &ToolDef) {
     }
     out.push_str("\n</parameters>");
     let tool_obj = serde_json::json!({ "name": tool.name, "description": tool.description, "parameters": tool.parameters });
-    render_extra_keys(out, tool_obj.as_object(), &["type", "name", "description", "parameters"]);
+    render_extra_keys(
+        out,
+        tool_obj.as_object(),
+        &["type", "name", "description", "parameters"],
+    );
     out.push_str("\n</function>");
 }
 
@@ -208,7 +224,11 @@ fn render_extra_keys(out: &mut String, dict: Option<&Map<String, Value>>, handle
         if handled.contains(&key.as_str()) {
             continue;
         }
-        let rendered = if value.is_object() || value.is_array() { to_json(value) } else { value_to_string(value) };
+        let rendered = if value.is_object() || value.is_array() {
+            to_json(value)
+        } else {
+            value_to_string(value)
+        };
         out.push_str("\n<");
         out.push_str(key);
         out.push('>');

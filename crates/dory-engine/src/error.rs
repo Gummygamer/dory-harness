@@ -14,7 +14,9 @@ pub enum Error {
         expected: String,
         actual: String,
     },
-    #[error("llama.cpp build mismatch: linked against fork commit {built}, harness is pinned to {pinned}")]
+    #[error(
+        "llama.cpp build mismatch: linked against fork commit {built}, harness is pinned to {pinned}"
+    )]
     ForkCommit { built: String, pinned: String },
     #[error("loop count {0} is invalid: Dory supports 1 to 4 loops")]
     InvalidLoops(u32),

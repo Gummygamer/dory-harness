@@ -77,7 +77,13 @@ struct Capture {
 impl Capture {
     fn new(limit: usize) -> Self {
         let head_cap = limit / 2;
-        Capture { head: Vec::new(), tail: VecDeque::new(), head_cap, tail_cap: limit - head_cap, total: 0 }
+        Capture {
+            head: Vec::new(),
+            tail: VecDeque::new(),
+            head_cap,
+            tail_cap: limit - head_cap,
+            total: 0,
+        }
     }
 
     fn push(&mut self, mut data: &[u8]) {
@@ -140,7 +146,8 @@ fn kill_group(pid: u32) {
 }
 
 fn receive(rx: &Receiver<(Vec<u8>, bool)>, until: Instant) -> Option<(Vec<u8>, bool)> {
-    rx.recv_timeout(until.saturating_duration_since(Instant::now())).ok()
+    rx.recv_timeout(until.saturating_duration_since(Instant::now()))
+        .ok()
 }
 
 pub fn run_process(spec: &ProcessSpec) -> io::Result<ProcessResult> {
@@ -234,12 +241,26 @@ mod tests {
 
     fn run(parts: &[&str], stdin: &[u8], timeout: Duration, limit: usize) -> ProcessResult {
         let a = argv(parts);
-        run_process(&ProcessSpec { argv: &a, stdin, cwd: None, env: None, timeout, limit, cancel: None }).unwrap()
+        run_process(&ProcessSpec {
+            argv: &a,
+            stdin,
+            cwd: None,
+            env: None,
+            timeout,
+            limit,
+            cancel: None,
+        })
+        .unwrap()
     }
 
     #[test]
     fn captures_stdout_and_exit_code() {
-        let r = run(&["sh", "-c", "echo hi; exit 0"], b"", Duration::from_secs(5), 1024);
+        let r = run(
+            &["sh", "-c", "echo hi; exit 0"],
+            b"",
+            Duration::from_secs(5),
+            1024,
+        );
         assert_eq!(r.stdout, b"hi\n");
         assert_eq!(r.code, Some(0));
         assert!(r.success());
@@ -254,7 +275,12 @@ mod tests {
 
     #[test]
     fn stderr_is_captured_separately() {
-        let r = run(&["sh", "-c", "echo oops >&2"], b"", Duration::from_secs(5), 1024);
+        let r = run(
+            &["sh", "-c", "echo oops >&2"],
+            b"",
+            Duration::from_secs(5),
+            1024,
+        );
         assert_eq!(r.stderr, b"oops\n");
         assert!(r.stdout.is_empty());
     }
@@ -265,37 +291,70 @@ mod tests {
         let start = Instant::now();
         let r = run(&["sleep", "0.3"], &input, Duration::from_secs(10), 1024);
         assert_eq!(r.code, Some(0));
-        assert!(start.elapsed() < Duration::from_secs(5), "took {:?}", start.elapsed());
+        assert!(
+            start.elapsed() < Duration::from_secs(5),
+            "took {:?}",
+            start.elapsed()
+        );
     }
 
     #[test]
     fn background_grandchild_cannot_hold_the_harness() {
         let start = Instant::now();
-        let r = run(&["sh", "-c", "sleep 100 & echo done"], b"", Duration::from_secs(10), 1024);
+        let r = run(
+            &["sh", "-c", "sleep 100 & echo done"],
+            b"",
+            Duration::from_secs(10),
+            1024,
+        );
         assert_eq!(r.stdout, b"done\n");
         assert!(r.orphans_killed, "{r:?}");
-        assert!(start.elapsed() < Duration::from_secs(6), "took {:?}", start.elapsed());
+        assert!(
+            start.elapsed() < Duration::from_secs(6),
+            "took {:?}",
+            start.elapsed()
+        );
     }
 
     #[test]
     fn timeout_kills_the_whole_group() {
         let start = Instant::now();
         // The background job's pid is printed so the test can check it died.
-        let r = run(&["sh", "-c", "sleep 100 & echo $!; sleep 100"], b"", Duration::from_millis(500), 1024);
+        let r = run(
+            &["sh", "-c", "sleep 100 & echo $!; sleep 100"],
+            b"",
+            Duration::from_millis(500),
+            1024,
+        );
         assert!(r.timed_out, "{r:?}");
         assert!(start.elapsed() < Duration::from_secs(5));
-        let grandchild: i32 = String::from_utf8_lossy(&r.stdout).trim().parse().expect("pid");
+        let grandchild: i32 = String::from_utf8_lossy(&r.stdout)
+            .trim()
+            .parse()
+            .expect("pid");
         // A killed process stays a zombie until its parent reaps it, so "alive" means not gone and not Z.
         let stat = std::fs::read_to_string(format!("/proc/{grandchild}/stat")).unwrap_or_default();
         let state = stat.rsplit(')').next().unwrap_or("").trim().chars().next();
-        assert!(matches!(state, None | Some('Z')), "grandchild {grandchild} survived the timeout (state {state:?})");
+        assert!(
+            matches!(state, None | Some('Z')),
+            "grandchild {grandchild} survived the timeout (state {state:?})"
+        );
     }
 
     #[test]
     fn output_is_bounded_with_a_marker() {
-        let r = run(&["sh", "-c", "head -c 10485760 /dev/zero | tr '\\0' a"], b"", Duration::from_secs(20), 16 * 1024);
+        let r = run(
+            &["sh", "-c", "head -c 10485760 /dev/zero | tr '\\0' a"],
+            b"",
+            Duration::from_secs(20),
+            16 * 1024,
+        );
         assert!(r.truncated);
-        assert!(r.stdout.len() <= 16 * 1024 + 64, "kept {} bytes", r.stdout.len());
+        assert!(
+            r.stdout.len() <= 16 * 1024 + 64,
+            "kept {} bytes",
+            r.stdout.len()
+        );
         let text = String::from_utf8_lossy(&r.stdout);
         assert!(text.contains("bytes omitted"), "no marker in output");
         assert!(text.starts_with('a') && text.ends_with('a'));
@@ -303,7 +362,12 @@ mod tests {
 
     #[test]
     fn small_output_is_not_marked_truncated() {
-        let r = run(&["sh", "-c", "printf 0123456789"], b"", Duration::from_secs(5), 1024);
+        let r = run(
+            &["sh", "-c", "printf 0123456789"],
+            b"",
+            Duration::from_secs(5),
+            1024,
+        );
         assert_eq!(r.stdout, b"0123456789");
         assert!(!r.truncated);
     }
@@ -317,7 +381,10 @@ mod tests {
         let (out, truncated) = cap.finish();
         assert!(truncated);
         let text = String::from_utf8(out).unwrap();
-        assert!(text.starts_with("abcde") && text.ends_with("klmno"), "{text:?}");
+        assert!(
+            text.starts_with("abcde") && text.ends_with("klmno"),
+            "{text:?}"
+        );
         assert!(text.contains("[... 5 bytes omitted ...]"), "{text:?}");
     }
 
@@ -343,7 +410,11 @@ mod tests {
         .unwrap();
         assert!(r.cancelled, "{r:?}");
         assert!(!r.timed_out);
-        assert!(start.elapsed() < Duration::from_secs(5), "took {:?}", start.elapsed());
+        assert!(
+            start.elapsed() < Duration::from_secs(5),
+            "took {:?}",
+            start.elapsed()
+        );
     }
 
     #[test]
@@ -353,7 +424,10 @@ mod tests {
             argv: &a,
             stdin: b"",
             cwd: None,
-            env: Some(vec![("PATH".into(), std::env::var("PATH").unwrap_or_default())]),
+            env: Some(vec![(
+                "PATH".into(),
+                std::env::var("PATH").unwrap_or_default(),
+            )]),
             timeout: Duration::from_secs(5),
             limit: 1024,
             cancel: None,

@@ -8,7 +8,8 @@ use sha2::{Digest, Sha256};
 use crate::error::{Error, Result};
 
 /// `NVIDIA-Nemotron-Labs-Dory1.0-4B-Q5_K_M.gguf`
-pub const PINNED_MODEL_SHA256: &str = "96080be49ffd67b916018b7bdef8c484762576fb52780e10ab98ac4978a660e0";
+pub const PINNED_MODEL_SHA256: &str =
+    "96080be49ffd67b916018b7bdef8c484762576fb52780e10ab98ac4978a660e0";
 /// The llama.cpp PR #30306 head that the Dory runtime was tested against.
 pub const PINNED_FORK_COMMIT: &str = "1c3cdd23787750814aa21a070dc4d6dc451af871";
 

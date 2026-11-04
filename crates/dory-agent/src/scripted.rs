@@ -4,7 +4,10 @@
 use std::{
     cell::RefCell,
     collections::VecDeque,
-    sync::{Arc, atomic::{AtomicBool, Ordering}},
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
 };
 
 use dory_engine::{Error, Event, Finish, GenParams, GenStats, Result};
@@ -22,14 +25,29 @@ pub struct ScriptedApprover {
 
 impl ScriptedApprover {
     pub fn new(answers: Vec<Answer>) -> Self {
-        ScriptedApprover { answers: RefCell::new(answers.into()), asked: RefCell::new(Vec::new()) }
+        ScriptedApprover {
+            answers: RefCell::new(answers.into()),
+            asked: RefCell::new(Vec::new()),
+        }
     }
 }
 
 impl Approver for ScriptedApprover {
     fn ask(&self, request: &Request) -> Answer {
-        self.asked.borrow_mut().push(Request { tool: request.tool.clone(), summary: request.summary.clone() });
-        self.answers.borrow_mut().pop_front().unwrap_or(Answer::Unavailable)
+        self.asked.borrow_mut().push(Request {
+            tool: request.tool.clone(),
+            summary: request.summary.clone(),
+            risk: request.risk,
+            workspace: request.workspace.clone(),
+            working_directory: request.working_directory.clone(),
+            arguments: request.arguments.clone(),
+            command: request.command.clone(),
+            sandbox: request.sandbox.clone(),
+        });
+        self.answers
+            .borrow_mut()
+            .pop_front()
+            .unwrap_or(Answer::Unavailable)
     }
 }
 

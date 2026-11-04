@@ -44,9 +44,14 @@ impl fmt::Display for SearchError {
         match self {
             SearchError::KeyRejected => write!(f, "the search key was rejected"),
             SearchError::RateLimited | SearchError::QuotaUsedUp => {
-                write!(f, "the search quota is used up or rate-limited; answer without searching")
+                write!(
+                    f,
+                    "the search quota is used up or rate-limited; answer without searching"
+                )
             }
-            SearchError::ServiceFailed(status) => write!(f, "the search service failed (HTTP {status})"),
+            SearchError::ServiceFailed(status) => {
+                write!(f, "the search service failed (HTTP {status})")
+            }
             SearchError::Failed(msg) => f.write_str(msg),
             SearchError::Cancelled => write!(f, "the search was cancelled"),
         }
@@ -57,7 +62,12 @@ pub trait SearchProvider {
     /// The name shown to the user and written to the session header.
     fn name(&self) -> &str;
     /// Up to `n` hits for `query`. Hits without a URL are dropped.
-    fn search(&self, query: &str, n: usize, cancel: &AtomicBool) -> Result<Vec<SearchHit>, SearchError>;
+    fn search(
+        &self,
+        query: &str,
+        n: usize,
+        cancel: &AtomicBool,
+    ) -> Result<Vec<SearchHit>, SearchError>;
 }
 
 /// Maps a status to an error, or accepts it. `body` is only used for Brave's 429 codes.
@@ -65,19 +75,24 @@ fn check_status(status: u16, body: &[u8]) -> Result<(), SearchError> {
     match status {
         200..=299 => Ok(()),
         401 | 403 => Err(SearchError::KeyRejected),
-        429 if String::from_utf8_lossy(body).contains("QUOTA_LIMITED") => Err(SearchError::QuotaUsedUp),
+        429 if String::from_utf8_lossy(body).contains("QUOTA_LIMITED") => {
+            Err(SearchError::QuotaUsedUp)
+        }
         429 => Err(SearchError::RateLimited),
         // Tavily: 432 is the key or plan limit, 433 the pay-as-you-go limit. Both mean the quota is used up.
         432 | 433 => Err(SearchError::QuotaUsedUp),
         500..=599 => Err(SearchError::ServiceFailed(status)),
-        other => Err(SearchError::Failed(format!("the search service replied with HTTP {other}"))),
+        other => Err(SearchError::Failed(format!(
+            "the search service replied with HTTP {other}"
+        ))),
     }
 }
 
 /// The reply as JSON, or an error if the status is refused or the body is not JSON.
 fn json_reply(resp: Response) -> Result<Value, SearchError> {
     check_status(resp.status, &resp.body)?;
-    serde_json::from_slice(&resp.body).map_err(|_| SearchError::Failed("the search service did not return JSON".into()))
+    serde_json::from_slice(&resp.body)
+        .map_err(|_| SearchError::Failed("the search service did not return JSON".into()))
 }
 
 /// Tavily's search API. The key goes in the `Authorization` header only.
@@ -89,13 +104,19 @@ pub struct Tavily {
 impl Tavily {
     /// `base` is `https://api.tavily.com` in use; tests point it at a loopback server.
     pub fn new(key: &str, base: &str) -> Self {
-        Tavily { key: key.to_string(), base: base.trim_end_matches('/').to_string() }
+        Tavily {
+            key: key.to_string(),
+            base: base.trim_end_matches('/').to_string(),
+        }
     }
 }
 
 impl fmt::Debug for Tavily {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Tavily").field("key", &"<redacted>").field("base", &self.base).finish()
+        f.debug_struct("Tavily")
+            .field("key", &"<redacted>")
+            .field("base", &self.base)
+            .finish()
     }
 }
 
@@ -114,8 +135,8 @@ struct TavilyHit {
 
 /// Reads Tavily's reply. Unknown fields are ignored, so new ones do not break the search.
 pub fn parse_tavily(json: &Value) -> Result<Vec<SearchHit>, SearchError> {
-    let reply: TavilyReply =
-        serde_json::from_value(json.clone()).map_err(|_| SearchError::Failed("the search reply had an unexpected shape".into()))?;
+    let reply: TavilyReply = serde_json::from_value(json.clone())
+        .map_err(|_| SearchError::Failed("the search reply had an unexpected shape".into()))?;
     Ok(reply
         .results
         .into_iter()
@@ -135,7 +156,12 @@ impl SearchProvider for Tavily {
         "tavily"
     }
 
-    fn search(&self, query: &str, n: usize, cancel: &AtomicBool) -> Result<Vec<SearchHit>, SearchError> {
+    fn search(
+        &self,
+        query: &str,
+        n: usize,
+        cancel: &AtomicBool,
+    ) -> Result<Vec<SearchHit>, SearchError> {
         let body = json!({
             "query": query,
             "max_results": n,
@@ -168,13 +194,19 @@ pub struct Brave {
 impl Brave {
     /// `base` is `https://api.search.brave.com` in use; tests point it at a loopback server.
     pub fn new(key: &str, base: &str) -> Self {
-        Brave { key: key.to_string(), base: base.trim_end_matches('/').to_string() }
+        Brave {
+            key: key.to_string(),
+            base: base.trim_end_matches('/').to_string(),
+        }
     }
 }
 
 impl fmt::Debug for Brave {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Brave").field("key", &"<redacted>").field("base", &self.base).finish()
+        f.debug_struct("Brave")
+            .field("key", &"<redacted>")
+            .field("base", &self.base)
+            .finish()
     }
 }
 
@@ -198,8 +230,8 @@ struct BraveHit {
 
 /// Reads Brave's reply. A reply with no `web` part has no results.
 pub fn parse_brave(json: &Value) -> Result<Vec<SearchHit>, SearchError> {
-    let reply: BraveReply =
-        serde_json::from_value(json.clone()).map_err(|_| SearchError::Failed("the search reply had an unexpected shape".into()))?;
+    let reply: BraveReply = serde_json::from_value(json.clone())
+        .map_err(|_| SearchError::Failed("the search reply had an unexpected shape".into()))?;
     Ok(reply
         .web
         .map(|w| w.results)
@@ -221,7 +253,9 @@ pub fn encode_query(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     for b in s.bytes() {
         match b {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => out.push(b as char),
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                out.push(b as char)
+            }
             _ => out.push_str(&format!("%{b:02X}")),
         }
     }
@@ -233,10 +267,19 @@ impl SearchProvider for Brave {
         "brave"
     }
 
-    fn search(&self, query: &str, n: usize, cancel: &AtomicBool) -> Result<Vec<SearchHit>, SearchError> {
+    fn search(
+        &self,
+        query: &str,
+        n: usize,
+        cancel: &AtomicBool,
+    ) -> Result<Vec<SearchHit>, SearchError> {
         let resp = http::send(
             Request {
-                url: format!("{}/res/v1/web/search?q={}&count={n}", self.base, encode_query(query)),
+                url: format!(
+                    "{}/res/v1/web/search?q={}&count={n}",
+                    self.base,
+                    encode_query(query)
+                ),
                 headers: vec![
                     ("X-Subscription-Token".into(), self.key.clone()),
                     ("Accept".into(), "application/json".into()),

@@ -35,16 +35,25 @@ static TEMP_COUNTER: AtomicU64 = AtomicU64::new(0);
 /// Writes `bytes` to `path` by replacing it in one rename. Keeps the mode of an existing file.
 /// On failure the temporary file is removed and `path` is untouched.
 pub fn atomic_write(path: &Path, bytes: &[u8]) -> io::Result<()> {
-    let dir = path.parent().ok_or_else(|| io::Error::other("the file has no parent directory"))?;
+    let dir = path
+        .parent()
+        .ok_or_else(|| io::Error::other("the file has no parent directory"))?;
     fs::create_dir_all(dir)?;
-    let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+    let name = path
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default();
     let n = TEMP_COUNTER.fetch_add(1, Ordering::Relaxed);
     let tmp = dir.join(format!(".{name}.dory-tmp-{}-{n}", std::process::id()));
     let existing = fs::metadata(path).ok().map(|m| m.permissions());
 
     let result = (|| {
         // create_new never reuses a file that is already there.
-        let mut f = OpenOptions::new().write(true).create_new(true).mode(0o666).open(&tmp)?;
+        let mut f = OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .mode(0o666)
+            .open(&tmp)?;
         f.write_all(bytes)?;
         f.sync_data()?;
         drop(f);
@@ -75,8 +84,15 @@ fn check_seen(files: &FileLog, path: &Path, shown: &str, bytes: &[u8]) -> Result
 /// A unified diff and the number of changed lines.
 fn diff(old: &str, new: &str, shown: &str) -> (String, usize) {
     let d = TextDiff::from_lines(old, new);
-    let changed = d.iter_all_changes().filter(|c| c.tag() != ChangeTag::Equal).count();
-    let mut text = d.unified_diff().context_radius(2).header(&format!("a/{shown}"), &format!("b/{shown}")).to_string();
+    let changed = d
+        .iter_all_changes()
+        .filter(|c| c.tag() != ChangeTag::Equal)
+        .count();
+    let mut text = d
+        .unified_diff()
+        .context_radius(2)
+        .header(&format!("a/{shown}"), &format!("b/{shown}"))
+        .to_string();
     if cut_bytes(&mut text, DIFF_MAX_BYTES) {
         text.push_str("\n[diff cut short]");
     }
@@ -120,8 +136,27 @@ impl Tool for WriteFile {
     fn summary(&self, args: &Map<String, Value>, ctx: &ToolCtx) -> String {
         match parse_args::<WriteArgs>("write_file", args) {
             Ok(a) => {
-                let exists = ctx.workspace.resolve(&a.path, Access::Write).map(|p| p.exists()).unwrap_or(false);
-                format!("{} {} ({} lines, {} bytes)", if exists { "overwrite" } else { "create" }, a.path, a.content.lines().count(), a.content.len())
+                let exists = ctx
+                    .workspace
+                    .resolve(&a.path, Access::Write)
+                    .map(|p| p.exists())
+                    .unwrap_or(false);
+                let mut preview = a.content.clone();
+                let truncated = cut_bytes(&mut preview, 4096);
+                format!(
+                    "{} {} ({} lines, {} bytes)",
+                    if exists { "overwrite" } else { "create" },
+                    a.path,
+                    a.content.lines().count(),
+                    a.content.len()
+                ) + &format!(
+                    "\nProposed content preview:\n{preview}{}",
+                    if truncated {
+                        "\n[preview truncated]"
+                    } else {
+                        ""
+                    }
+                )
             }
             Err(outcome) => outcome.text,
         }
@@ -158,7 +193,11 @@ impl Tool for WriteFile {
 
         let lines = a.content.lines().count();
         match old {
-            None => ToolOutcome::ok(format!("created {} ({lines} lines, {} bytes)", a.path, a.content.len())),
+            None => ToolOutcome::ok(format!(
+                "created {} ({lines} lines, {} bytes)",
+                a.path,
+                a.content.len()
+            )),
             Some(old) => {
                 let (d, changed) = diff(&old, &a.content, &a.path);
                 let mut out = format!("overwrote {} ({lines} lines, {changed} changed)", a.path);
@@ -167,7 +206,11 @@ impl Tool for WriteFile {
                     out.push_str(&d);
                 }
                 let cut = cut_bytes(&mut out, MAX_OUTPUT_BYTES);
-                ToolOutcome { text: out, is_error: false, truncated: cut }
+                ToolOutcome {
+                    text: out,
+                    is_error: false,
+                    truncated: cut,
+                }
             }
         }
     }
@@ -211,7 +254,10 @@ impl Tool for EditFile {
         match plan_edit(args, ctx) {
             Ok(plan) => {
                 let (d, changed) = diff(&plan.text, &plan.updated, &plan.path_shown);
-                format!("edit {} ({} replacement(s), {changed} line(s) changed)\n{d}", plan.path_shown, plan.count_applied)
+                format!(
+                    "edit {} ({} replacement(s), {changed} line(s) changed)\n{d}",
+                    plan.path_shown, plan.count_applied
+                )
             }
             Err(outcome) => outcome.text,
         }
@@ -225,7 +271,9 @@ impl Tool for EditFile {
         if let Err(e) = atomic_write(&plan.path, plan.updated.as_bytes()) {
             return ToolOutcome::err(format!("cannot write '{}': {e}", plan.path_shown));
         }
-        ctx.files.borrow_mut().record(&plan.path, plan.updated.as_bytes());
+        ctx.files
+            .borrow_mut()
+            .record(&plan.path, plan.updated.as_bytes());
 
         let (d, changed) = diff(&plan.text, &plan.updated, &plan.path_shown);
         let mut out = format!(
@@ -237,7 +285,11 @@ impl Tool for EditFile {
             out.push_str(&d);
         }
         let cut = cut_bytes(&mut out, MAX_OUTPUT_BYTES);
-        ToolOutcome { text: out, is_error: false, truncated: cut }
+        ToolOutcome {
+            text: out,
+            is_error: false,
+            truncated: cut,
+        }
     }
 }
 
@@ -254,14 +306,25 @@ struct EditPlan {
 /// Checks an `edit_file` call against the file. Every refusal is returned as the outcome to send.
 fn plan_edit(args: &Map<String, Value>, ctx: &ToolCtx) -> Result<EditPlan, ToolOutcome> {
     let a: EditArgs = parse_args("edit_file", args)?;
-    let path = ctx.workspace.resolve(&a.path, Access::Write).map_err(|e| ToolOutcome::err(e.to_string()))?;
+    let path = ctx
+        .workspace
+        .resolve(&a.path, Access::Write)
+        .map_err(|e| ToolOutcome::err(e.to_string()))?;
     if !path.is_file() {
-        return Err(ToolOutcome::err(format!("'{}' does not exist; use write_file to create it", a.path)));
+        return Err(ToolOutcome::err(format!(
+            "'{}' does not exist; use write_file to create it",
+            a.path
+        )));
     }
-    let bytes = fs::read(&path).map_err(|e| ToolOutcome::err(format!("cannot read '{}': {e}", a.path)))?;
+    let bytes =
+        fs::read(&path).map_err(|e| ToolOutcome::err(format!("cannot read '{}': {e}", a.path)))?;
     check_seen(&ctx.files.borrow(), &path, &a.path, &bytes)?;
-    let text = String::from_utf8(bytes)
-        .map_err(|_| ToolOutcome::err(format!("'{}' is not valid UTF-8; edit_file only edits text", a.path)))?;
+    let text = String::from_utf8(bytes).map_err(|_| {
+        ToolOutcome::err(format!(
+            "'{}' is not valid UTF-8; edit_file only edits text",
+            a.path
+        ))
+    })?;
     if a.old_text.is_empty() {
         return Err(ToolOutcome::err("old_text is empty; say what to replace"));
     }
@@ -279,7 +342,10 @@ fn plan_edit(args: &Map<String, Value>, ctx: &ToolCtx) -> Result<EditPlan, ToolO
         let hint = closest_line(&text, &a.old_text)
             .map(|(n, line)| format!(" The closest line is {n}: {line:?}"))
             .unwrap_or_default();
-        return Err(ToolOutcome::err(format!("old_text was not found in '{}'.{hint}", a.path)));
+        return Err(ToolOutcome::err(format!(
+            "old_text was not found in '{}'.{hint}",
+            a.path
+        )));
     }
     let replace_all = a.replace_all.unwrap_or(false);
     if count > 1 && !replace_all {
@@ -288,7 +354,11 @@ fn plan_edit(args: &Map<String, Value>, ctx: &ToolCtx) -> Result<EditPlan, ToolO
             a.path
         )));
     }
-    let updated = if replace_all { text.replace(&old, &new) } else { text.replacen(&old, &new, 1) };
+    let updated = if replace_all {
+        text.replace(&old, &new)
+    } else {
+        text.replacen(&old, &new, 1)
+    };
     Ok(EditPlan {
         path,
         path_shown: a.path,

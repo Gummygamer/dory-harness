@@ -21,7 +21,12 @@ use clap::Args;
 use dory_agent::{
     Agent, AgentConfig, AgentEvent, Reason, Registry, TurnReport,
     backend::EngineBackend,
-    builtin::{command::RunCommand, read_tools, web::{DEFAULT_SEARCHES_PER_TASK, WebSearch, secret_values}, write_tools},
+    builtin::{
+        command::RunCommand,
+        read_tools,
+        web::{DEFAULT_SEARCHES_PER_TASK, WebSearch, secret_values},
+        write_tools,
+    },
     policy::{CommandRules, Mode, Permissions, Policy, TerminalApprover},
     prompt,
     sandbox::{SandboxConfig, SandboxMode},
@@ -194,7 +199,12 @@ impl Output {
                 let _ = stdout().flush();
             }
         } else {
-            print_event(ev.clone(), self.show_reasoning, self.max_rounds, self.verbose);
+            print_event(
+                ev.clone(),
+                self.show_reasoning,
+                self.max_rounds,
+                self.verbose,
+            );
         }
     }
 
@@ -221,12 +231,22 @@ fn json_event(ev: &AgentEvent) -> Option<Value> {
         AgentEvent::ToolCall { name, arguments } => {
             json!({"version": v, "event": "tool_call", "name": name, "arguments": arguments})
         }
-        AgentEvent::MalformedCall(raw) => json!({"version": v, "event": "malformed_call", "raw": raw}),
-        AgentEvent::ToolResult { name, text } => json!({"version": v, "event": "tool_result", "name": name, "text": text}),
-        AgentEvent::Compacted { stage, before, after } => {
+        AgentEvent::MalformedCall(raw) => {
+            json!({"version": v, "event": "malformed_call", "raw": raw})
+        }
+        AgentEvent::ToolResult { name, text, .. } => {
+            json!({"version": v, "event": "tool_result", "name": name, "text": text})
+        }
+        AgentEvent::Compacted {
+            stage,
+            before,
+            after,
+        } => {
             json!({"version": v, "event": "compacted", "stage": stage, "before": before, "after": after})
         }
-        AgentEvent::RoundStats(_) | AgentEvent::MessageAdded(_) | AgentEvent::Finished(_) => return None,
+        AgentEvent::RoundStats(_) | AgentEvent::MessageAdded(_) | AgentEvent::Finished(_) => {
+            return None;
+        }
     })
 }
 
@@ -258,13 +278,16 @@ struct Setup<'a> {
 pub fn run(cli: &Cli, args: &AgentArgs) -> Result<i32> {
     let mode: Mode = args.permission.parse().map_err(anyhow::Error::msg)?;
     let sandbox_mode: SandboxMode = args.sandbox.parse().map_err(anyhow::Error::msg)?;
-    let root = fs::canonicalize(&args.workspace).with_context(|| format!("workspace {}", args.workspace.display()))?;
+    let root = fs::canonicalize(&args.workspace)
+        .with_context(|| format!("workspace {}", args.workspace.display()))?;
     let workspace = Workspace::new(&root, &args.allow_paths)?;
 
     let mut sandbox = SandboxConfig::new(sandbox_mode);
     sandbox.network = args.network;
     for dir in &args.writable {
-        sandbox.writable.push(fs::canonicalize(dir).with_context(|| format!("--writable {}", dir.display()))?);
+        sandbox
+            .writable
+            .push(fs::canonicalize(dir).with_context(|| format!("--writable {}", dir.display()))?);
     }
     let require_sandbox = mode == Mode::Full && sandbox_mode != SandboxMode::None;
 
@@ -273,14 +296,20 @@ pub fn run(cli: &Cli, args: &AgentArgs) -> Result<i32> {
     let web_key = if args.no_web {
         None
     } else {
-        std::env::var(service.key_var()).ok().filter(|k| !k.trim().is_empty())
+        std::env::var(service.key_var())
+            .ok()
+            .filter(|k| !k.trim().is_empty())
     };
     let quota_note = state::quota_used_up_at(&state::state_path(&root));
     let web_state = match (args.no_web, &web_key) {
         (true, _) => "web off (--no-web)".to_string(),
         (false, None) => format!("web off (no {})", service.key_var()),
         (false, Some(_)) => {
-            let ask = if mode == Mode::Full || args.allow_web { "allowed" } else { "asks" };
+            let ask = if mode == Mode::Full || args.allow_web {
+                "allowed"
+            } else {
+                "asks"
+            };
             match &quota_note {
                 Some(at) => format!("web {} ({ask}, quota used up at {at})", service.name()),
                 None => format!("web {} ({ask})", service.name()),
@@ -301,7 +330,11 @@ pub fn run(cli: &Cli, args: &AgentArgs) -> Result<i32> {
     let cancel = Arc::new(AtomicBool::new(false));
     let busy = Arc::new(AtomicBool::new(false));
     let last_press = Arc::new(Mutex::new(None));
-    install_interrupt(&Interrupt { cancel: cancel.clone(), busy: busy.clone(), last_press: last_press.clone() })?;
+    install_interrupt(&Interrupt {
+        cancel: cancel.clone(),
+        busy: busy.clone(),
+        last_press: last_press.clone(),
+    })?;
 
     let engine = start_engine(cli)?;
 
@@ -320,13 +353,21 @@ pub fn run(cli: &Cli, args: &AgentArgs) -> Result<i32> {
     });
     let (mut session, mut messages) = match &args.resume {
         Some(id) => {
-            let (s, msgs, _) = Session::open(&root, id).with_context(|| format!("resuming session {id}"))?;
+            let (s, msgs, _) =
+                Session::open(&root, id).with_context(|| format!("resuming session {id}"))?;
             (s, msgs)
         }
         None => {
-            let mut s = Session::create(&root, header).context("creating the session transcript")?;
+            let mut s =
+                Session::create(&root, header).context("creating the session transcript")?;
             let agents_md = fs::read_to_string(root.join("AGENTS.md")).ok();
-            let system = prompt::system_prompt(&root, std::env::consts::OS, agents_md.as_deref(), args.system.as_deref(), web_key.is_some());
+            let system = prompt::system_prompt(
+                &root,
+                std::env::consts::OS,
+                agents_md.as_deref(),
+                args.system.as_deref(),
+                web_key.is_some(),
+            );
             let msgs = vec![Message::new("system", &system)];
             s.record(&AgentEvent::MessageAdded(msgs[0].clone()))?;
             (s, msgs)
@@ -361,8 +402,14 @@ pub fn run(cli: &Cli, args: &AgentArgs) -> Result<i32> {
     }
 
     let policy = Policy::new(
-        Permissions { mode, commands: CommandRules::new(&args.allow_commands), allow_web: args.allow_web },
-        Box::new(TerminalApprover { cancel: cancel.clone() }),
+        Permissions {
+            mode,
+            commands: CommandRules::new(&args.allow_commands),
+            allow_web: args.allow_web,
+        },
+        Box::new(TerminalApprover {
+            cancel: cancel.clone(),
+        }),
     );
 
     let sandbox_state = if sandbox.active() {
@@ -382,7 +429,11 @@ pub fn run(cli: &Cli, args: &AgentArgs) -> Result<i32> {
         session.id
     );
     if !args.no_web && web_key.is_none() {
-        eprintln!("web search off: set {} ({})", service.key_var(), service.signup_hint());
+        eprintln!(
+            "web search off: set {} ({})",
+            service.key_var(),
+            service.signup_hint()
+        );
     }
     if mode == Mode::Full {
         eprintln!("warning: full mode runs commands without asking.");
@@ -458,12 +509,19 @@ fn finish_line(output: &Output, session: &Session, reason: Option<Reason>, total
 }
 
 /// Runs one task to its end. Each message and round is written to the transcript as it happens.
-fn run_turn(setup: &Setup, session: &mut Session, output: &Output, messages: &mut Vec<Message>) -> Result<(Option<Reason>, Totals)> {
+fn run_turn(
+    setup: &Setup,
+    session: &mut Session,
+    output: &Output,
+    messages: &mut Vec<Message>,
+) -> Result<(Option<Reason>, Totals)> {
     setup.cancel.store(false, Ordering::SeqCst);
     *setup.last_press.lock().unwrap_or_else(|p| p.into_inner()) = None;
     setup.busy.store(true, Ordering::SeqCst);
 
-    let backend = EngineBackend { engine: setup.engine };
+    let backend = EngineBackend {
+        engine: setup.engine,
+    };
     let mut config = AgentConfig::new(setup.thinking, setup.params.clone());
     config.max_rounds = setup.max_rounds;
     config.max_duration = setup.max_duration;
@@ -502,7 +560,13 @@ fn run_turn(setup: &Setup, session: &mut Session, output: &Output, messages: &mu
 }
 
 /// The interactive session. Commands: /exit, /reset, /permission MODE, /compact, /tools, /status.
-fn repl(setup: &Setup, session: &mut Session, output: &Output, messages: &mut Vec<Message>, root: &std::path::Path) -> Result<i32> {
+fn repl(
+    setup: &Setup,
+    session: &mut Session,
+    output: &Output,
+    messages: &mut Vec<Message>,
+    root: &std::path::Path,
+) -> Result<i32> {
     let system: Vec<Message> = messages.iter().take(1).cloned().collect();
     eprintln!("ready. /exit, /reset, /permission MODE, /compact, /tools, /status");
     let mut policy_mode = setup.policy.permissions.mode;
@@ -524,7 +588,9 @@ fn repl(setup: &Setup, session: &mut Session, output: &Output, messages: &mut Ve
                 continue;
             }
             "/compact" => {
-                let agent_backend = EngineBackend { engine: setup.engine };
+                let agent_backend = EngineBackend {
+                    engine: setup.engine,
+                };
                 let agent = Agent {
                     backend: &agent_backend,
                     tools: &setup.registry,
@@ -533,11 +599,19 @@ fn repl(setup: &Setup, session: &mut Session, output: &Output, messages: &mut Ve
                     cancel: setup.cancel.clone(),
                 };
                 let changed = agent.compact_now(messages, &mut |ev| output.event(&ev))?;
-                eprintln!("[{}]", if changed { "compacted" } else { "nothing to compact" });
+                eprintln!(
+                    "[{}]",
+                    if changed {
+                        "compacted"
+                    } else {
+                        "nothing to compact"
+                    }
+                );
                 continue;
             }
             "/tools" => {
-                let names: Vec<String> = setup.registry.defs().into_iter().map(|d| d.name).collect();
+                let names: Vec<String> =
+                    setup.registry.defs().into_iter().map(|d| d.name).collect();
                 eprintln!("[tools: {}]", names.join(", "));
                 continue;
             }

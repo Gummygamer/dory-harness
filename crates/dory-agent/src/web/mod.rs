@@ -13,7 +13,11 @@ pub use provider::{Brave, SearchError, SearchHit, SearchProvider, Tavily};
 /// debug builds only, so the tests and the evaluation can use a fake server. Release builds ignore
 /// it: a stray value must not send the key to another host.
 pub fn base_url(default: &str) -> String {
-    resolve_base(cfg!(debug_assertions), std::env::var("DORY_WEB_BASE_URL").ok().as_deref(), default)
+    resolve_base(
+        cfg!(debug_assertions),
+        std::env::var("DORY_WEB_BASE_URL").ok().as_deref(),
+        default,
+    )
 }
 
 fn resolve_base(debug: bool, override_url: Option<&str>, default: &str) -> String {
@@ -31,12 +35,18 @@ mod tests {
 
     #[test]
     fn a_debug_build_uses_the_override() {
-        assert_eq!(resolve_base(true, Some("http://127.0.0.1:9"), DEFAULT), "http://127.0.0.1:9");
+        assert_eq!(
+            resolve_base(true, Some("http://127.0.0.1:9"), DEFAULT),
+            "http://127.0.0.1:9"
+        );
     }
 
     #[test]
     fn a_release_build_ignores_the_override() {
-        assert_eq!(resolve_base(false, Some("http://127.0.0.1:9"), DEFAULT), DEFAULT);
+        assert_eq!(
+            resolve_base(false, Some("http://127.0.0.1:9"), DEFAULT),
+            DEFAULT
+        );
     }
 
     #[test]

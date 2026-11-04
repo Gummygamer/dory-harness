@@ -13,11 +13,20 @@ fn tavily_live_search_returns_hits() {
     let key = std::env::var("TAVILY_API_KEY").expect("TAVILY_API_KEY is not set");
     let provider = Tavily::new(&key, "https://api.tavily.com");
     let hits = provider
-        .search("serde_json preserve_order feature release", 3, &AtomicBool::new(false))
+        .search(
+            "serde_json preserve_order feature release",
+            3,
+            &AtomicBool::new(false),
+        )
         .expect("the live Tavily search failed");
     assert!(!hits.is_empty(), "the live search returned no hits");
     for hit in &hits {
-        println!("tavily | {} | {} | {} bytes of excerpt", hit.title, hit.url, hit.content.len());
+        println!(
+            "tavily | {} | {} | {} bytes of excerpt",
+            hit.title,
+            hit.url,
+            hit.content.len()
+        );
     }
 }
 
@@ -27,10 +36,19 @@ fn brave_live_search_returns_hits() {
     let key = std::env::var("BRAVE_SEARCH_API_KEY").expect("BRAVE_SEARCH_API_KEY is not set");
     let provider = Brave::new(&key, "https://api.search.brave.com");
     let hits = provider
-        .search("serde_json preserve_order feature release", 3, &AtomicBool::new(false))
+        .search(
+            "serde_json preserve_order feature release",
+            3,
+            &AtomicBool::new(false),
+        )
         .expect("the live Brave search failed");
     assert!(!hits.is_empty(), "the live search returned no hits");
     for hit in &hits {
-        println!("brave | {} | {} | {} bytes of excerpt", hit.title, hit.url, hit.content.len());
+        println!(
+            "brave | {} | {} | {} bytes of excerpt",
+            hit.title,
+            hit.url,
+            hit.content.len()
+        );
     }
 }

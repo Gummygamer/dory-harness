@@ -24,7 +24,9 @@ const MAX_TIMEOUT_SECS: u64 = 600;
 /// Output kept in memory per command. Anything beyond it is lost, and the marker says so.
 const CAPTURE_LIMIT: usize = 8 * 1024 * 1024;
 /// Environment variables passed to commands, besides the ones named with `--env`.
-const ENV_ALLOW: &[&str] = &["PATH", "HOME", "LANG", "LC_ALL", "TERM", "USER", "LOGNAME", "TMPDIR"];
+const ENV_ALLOW: &[&str] = &[
+    "PATH", "HOME", "LANG", "LC_ALL", "TERM", "USER", "LOGNAME", "TMPDIR",
+];
 const ENV_ALLOW_PREFIXES: &[&str] = &["CARGO_", "RUSTUP_"];
 
 static OUTPUT_COUNTER: AtomicUsize = AtomicUsize::new(0);
@@ -73,7 +75,11 @@ fn head_and_tail(text: &str, max: usize) -> String {
         tail_start += 1;
     }
     let omitted = tail_start - head_end;
-    format!("{}\n[... {omitted} bytes omitted ...]\n{}", &text[..head_end], &text[tail_start..])
+    format!(
+        "{}\n[... {omitted} bytes omitted ...]\n{}",
+        &text[..head_end],
+        &text[tail_start..]
+    )
 }
 
 impl Tool for RunCommand {
@@ -99,7 +105,9 @@ impl Tool for RunCommand {
     }
 
     fn command_text(&self, args: &Map<String, Value>) -> Option<String> {
-        args.get("command").and_then(Value::as_str).map(str::to_string)
+        args.get("command")
+            .and_then(Value::as_str)
+            .map(str::to_string)
     }
 
     fn summary(&self, args: &Map<String, Value>, _ctx: &ToolCtx) -> String {
@@ -113,21 +121,47 @@ impl Tool for RunCommand {
             Err(e) => return e,
         };
         let cwd_shown = a.cwd.clone().unwrap_or_default();
-        let cwd: PathBuf = match ctx.workspace.resolve(if cwd_shown.is_empty() { "." } else { &cwd_shown }, Access::Read) {
+        let cwd: PathBuf = match ctx.workspace.resolve(
+            if cwd_shown.is_empty() {
+                "."
+            } else {
+                &cwd_shown
+            },
+            Access::Read,
+        ) {
             Ok(p) if p.is_dir() => p,
             Ok(_) => return ToolOutcome::err(format!("'{cwd_shown}' is not a folder")),
             Err(e) => return ToolOutcome::err(e.to_string()),
         };
-        let timeout_secs = a.timeout_seconds.unwrap_or(self.default_timeout_secs).clamp(1, MAX_TIMEOUT_SECS);
+        let timeout_secs = a
+            .timeout_seconds
+            .unwrap_or(self.default_timeout_secs)
+            .clamp(1, MAX_TIMEOUT_SECS);
 
-        let inner = vec!["bash".to_string(), "-c".to_string(), format!("exec 2>&1\n{}", a.command)];
+        let inner = vec![
+            "bash".to_string(),
+            "-c".to_string(),
+            format!("exec 2>&1\n{}", a.command),
+        ];
         let (argv, sandboxed) = match (&self.sandbox.bwrap, self.sandbox.mode) {
             (Some(bwrap), SandboxMode::Auto | SandboxMode::Bwrap) => {
                 let masks = ctx.workspace.secret_files();
-                (sandbox::wrap(&self.sandbox, bwrap, ctx.workspace.root(), &cwd, &masks, &inner), true)
+                (
+                    sandbox::wrap(
+                        &self.sandbox,
+                        bwrap,
+                        ctx.workspace.root(),
+                        &cwd,
+                        &masks,
+                        &inner,
+                    ),
+                    true,
+                )
             }
             (None, SandboxMode::Bwrap) => {
-                return ToolOutcome::err("bwrap is required by --sandbox bwrap but is not available here");
+                return ToolOutcome::err(
+                    "bwrap is required by --sandbox bwrap but is not available here",
+                );
             }
             _ => (inner, false),
         };
@@ -152,9 +186,13 @@ impl Tool for RunCommand {
             Err(e) => return ToolOutcome::err(format!("cannot start the command: {e}")),
         };
 
-        let output = String::from_utf8_lossy(&result.stdout).trim_end().to_string();
+        let output = String::from_utf8_lossy(&result.stdout)
+            .trim_end()
+            .to_string();
         let status = if result.timed_out {
-            format!("timed out after {timeout_secs}s; the command and everything it started were killed")
+            format!(
+                "timed out after {timeout_secs}s; the command and everything it started were killed"
+            )
         } else {
             match (result.code, result.signal) {
                 (Some(code), _) => format!("exit code {code}"),
@@ -162,7 +200,11 @@ impl Tool for RunCommand {
                 (None, None) => "no exit status".to_string(),
             }
         };
-        let status = if result.cancelled { "cancelled by the user; the command and everything it started were killed".to_string() } else { status };
+        let status = if result.cancelled {
+            "cancelled by the user; the command and everything it started were killed".to_string()
+        } else {
+            status
+        };
         let mut out = format!("{status}\n");
         let big = output.len() > MAX_OUTPUT_BYTES || result.truncated;
         if big {
@@ -186,7 +228,11 @@ impl Tool for RunCommand {
         if !sandboxed {
             out.push_str("\n[note: this command ran without the sandbox]");
         }
-        ToolOutcome { text: out, is_error: !result.success(), truncated: big }
+        ToolOutcome {
+            text: out,
+            is_error: !result.success(),
+            truncated: big,
+        }
     }
 }
 

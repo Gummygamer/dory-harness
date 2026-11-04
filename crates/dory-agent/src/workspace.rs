@@ -51,8 +51,14 @@ impl std::fmt::Display for PathError {
         match self {
             PathError::Nul => write!(f, "the path contains a NUL byte"),
             PathError::Outside(p) => write!(f, "'{p}' is outside the workspace"),
-            PathError::Protected(p) => write!(f, "'{p}' is inside a protected directory and cannot be written"),
-            PathError::Secret(p) => write!(f, "'{p}' looks like a secret and is not accessible (see --allow-path)"),
+            PathError::Protected(p) => write!(
+                f,
+                "'{p}' is inside a protected directory and cannot be written"
+            ),
+            PathError::Secret(p) => write!(
+                f,
+                "'{p}' looks like a secret and is not accessible (see --allow-path)"
+            ),
             PathError::NotADirectory(p) => write!(f, "'{p}' is not a directory"),
         }
     }
@@ -70,7 +76,8 @@ pub struct Workspace {
 impl Workspace {
     /// Opens a workspace at `root`. The root must be an existing directory.
     pub fn new(root: &Path, allow_paths: &[String]) -> Result<Workspace, PathError> {
-        let root = fs::canonicalize(root).map_err(|_| PathError::NotADirectory(root.display().to_string()))?;
+        let root = fs::canonicalize(root)
+            .map_err(|_| PathError::NotADirectory(root.display().to_string()))?;
         if !root.is_dir() {
             return Err(PathError::NotADirectory(root.display().to_string()));
         }
@@ -108,7 +115,9 @@ impl Workspace {
             if !entry.file_type().is_some_and(|t| t.is_file()) {
                 continue;
             }
-            let Ok(rel) = entry.path().strip_prefix(&self.root) else { continue };
+            let Ok(rel) = entry.path().strip_prefix(&self.root) else {
+                continue;
+            };
             if self.is_secret(rel) && !self.allowed_by_user(rel) {
                 out.push(entry.path().to_path_buf());
             }
@@ -121,7 +130,11 @@ impl Workspace {
         if path.contains('\0') {
             return Err(PathError::Nul);
         }
-        let joined = if Path::new(path).is_absolute() { PathBuf::from(path) } else { self.root.join(path) };
+        let joined = if Path::new(path).is_absolute() {
+            PathBuf::from(path)
+        } else {
+            self.root.join(path)
+        };
         let normal = normalize_lexically(&joined);
         let shown = path.to_string();
 
@@ -134,13 +147,18 @@ impl Workspace {
                 None => return Err(PathError::Outside(shown)),
             }
         }
-        let canonical_prefix = fs::canonicalize(existing).map_err(|_| PathError::Outside(shown.clone()))?;
+        let canonical_prefix =
+            fs::canonicalize(existing).map_err(|_| PathError::Outside(shown.clone()))?;
         if !canonical_prefix.starts_with(&self.root) {
             return Err(PathError::Outside(shown));
         }
         let rest = normal.strip_prefix(existing).unwrap_or(Path::new(""));
         // `join("")` would add a trailing slash, which makes a file path a directory path.
-        let resolved = if rest.as_os_str().is_empty() { canonical_prefix } else { canonical_prefix.join(rest) };
+        let resolved = if rest.as_os_str().is_empty() {
+            canonical_prefix
+        } else {
+            canonical_prefix.join(rest)
+        };
         if !resolved.starts_with(&self.root) {
             return Err(PathError::Outside(shown));
         }
@@ -159,7 +177,10 @@ impl Workspace {
 
     /// The path relative to the root, for display.
     pub fn relative(&self, abs: &Path) -> String {
-        abs.strip_prefix(&self.root).unwrap_or(abs).display().to_string()
+        abs.strip_prefix(&self.root)
+            .unwrap_or(abs)
+            .display()
+            .to_string()
     }
 
     fn is_secret(&self, relative: &Path) -> bool {
@@ -172,11 +193,15 @@ impl Workspace {
 }
 
 fn is_protected(relative: &Path) -> bool {
-    relative.components().any(|c| matches!(c, Component::Normal(n) if PROTECTED_DIRS.iter().any(|p| n == *p)))
+    relative
+        .components()
+        .any(|c| matches!(c, Component::Normal(n) if PROTECTED_DIRS.iter().any(|p| n == *p)))
 }
 
 fn compile<'a>(patterns: impl Iterator<Item = &'a str>) -> Vec<GlobMatcher> {
-    patterns.filter_map(|p| Glob::new(p).ok().map(|g| g.compile_matcher())).collect()
+    patterns
+        .filter_map(|p| Glob::new(p).ok().map(|g| g.compile_matcher()))
+        .collect()
 }
 
 /// Removes `.` and resolves `..` by text alone. Used only before the filesystem is consulted.
@@ -227,14 +252,23 @@ mod tests {
     #[test]
     fn dot_dot_escape_is_refused() {
         let (_d, ws) = fixture();
-        assert!(matches!(ws.resolve("../x", Access::Read), Err(PathError::Outside(_))));
-        assert!(matches!(ws.resolve("src/../../x", Access::Read), Err(PathError::Outside(_))));
+        assert!(matches!(
+            ws.resolve("../x", Access::Read),
+            Err(PathError::Outside(_))
+        ));
+        assert!(matches!(
+            ws.resolve("src/../../x", Access::Read),
+            Err(PathError::Outside(_))
+        ));
     }
 
     #[test]
     fn absolute_path_outside_the_root_is_refused() {
         let (_d, ws) = fixture();
-        assert!(matches!(ws.resolve("/etc/passwd", Access::Read), Err(PathError::Outside(_))));
+        assert!(matches!(
+            ws.resolve("/etc/passwd", Access::Read),
+            Err(PathError::Outside(_))
+        ));
     }
 
     #[test]
@@ -250,8 +284,14 @@ mod tests {
         let outside = tempfile::tempdir().unwrap();
         fs::write(outside.path().join("secret.txt"), "x").unwrap();
         symlink(outside.path().join("secret.txt"), d.path().join("link.txt")).unwrap();
-        assert!(matches!(ws.resolve("link.txt", Access::Read), Err(PathError::Outside(_))));
-        assert!(matches!(ws.resolve("link.txt", Access::Write), Err(PathError::Outside(_))));
+        assert!(matches!(
+            ws.resolve("link.txt", Access::Read),
+            Err(PathError::Outside(_))
+        ));
+        assert!(matches!(
+            ws.resolve("link.txt", Access::Write),
+            Err(PathError::Outside(_))
+        ));
     }
 
     #[test]
@@ -259,7 +299,10 @@ mod tests {
         let (d, ws) = fixture();
         let outside = tempfile::tempdir().unwrap();
         symlink(outside.path(), d.path().join("out")).unwrap();
-        assert!(matches!(ws.resolve("out/new.txt", Access::Write), Err(PathError::Outside(_))));
+        assert!(matches!(
+            ws.resolve("out/new.txt", Access::Write),
+            Err(PathError::Outside(_))
+        ));
         // Lexical normalization removes `out/..` before the filesystem is consulted.
         assert!(ws.resolve("out/../src/lib.rs", Access::Read).is_ok());
     }
@@ -280,8 +323,14 @@ mod tests {
     #[test]
     fn writes_under_git_and_dory_are_refused_but_reads_are_not() {
         let (_d, ws) = fixture();
-        assert!(matches!(ws.resolve(".git/config", Access::Write), Err(PathError::Protected(_))));
-        assert!(matches!(ws.resolve(".dory/sessions/x.jsonl", Access::Write), Err(PathError::Protected(_))));
+        assert!(matches!(
+            ws.resolve(".git/config", Access::Write),
+            Err(PathError::Protected(_))
+        ));
+        assert!(matches!(
+            ws.resolve(".dory/sessions/x.jsonl", Access::Write),
+            Err(PathError::Protected(_))
+        ));
         assert!(ws.resolve(".git/config", Access::Read).is_ok());
     }
 
@@ -291,8 +340,14 @@ mod tests {
         fs::write(d.path().join(".env"), "KEY=1").unwrap();
         fs::write(d.path().join("src/deploy.pem"), "x").unwrap();
         for p in [".env", "src/deploy.pem", "new/.env.local"] {
-            assert!(matches!(ws.resolve(p, Access::Read), Err(PathError::Secret(_))), "{p}");
-            assert!(matches!(ws.resolve(p, Access::Write), Err(PathError::Secret(_))), "{p}");
+            assert!(
+                matches!(ws.resolve(p, Access::Read), Err(PathError::Secret(_))),
+                "{p}"
+            );
+            assert!(
+                matches!(ws.resolve(p, Access::Write), Err(PathError::Secret(_))),
+                "{p}"
+            );
         }
     }
 

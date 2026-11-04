@@ -30,8 +30,8 @@ use axum::{
 use clap::Parser;
 use dory_agent::tools::sanitize_tool_output;
 use dory_engine::{
-    CacheMode, Engine, EngineOptions, Error as EngineError, Event, Finish, GenParams, GenStats, LoadOptions,
-    PrefillSchedule,
+    CacheMode, Engine, EngineOptions, Error as EngineError, Event, Finish, GenParams, GenStats,
+    LoadOptions, PrefillSchedule,
     chat::{self, Message, ToolCall, ToolDef},
     parse::{Piece, StreamParser},
     verify,
@@ -43,8 +43,19 @@ use tokio_stream::wrappers::ReceiverStream;
 
 /// Request fields this server understands. Any other field is logged, not silently dropped.
 const KNOWN_FIELDS: &[&str] = &[
-    "model", "messages", "tools", "tool_choice", "stream", "stream_options", "max_tokens", "temperature", "top_p",
-    "seed", "chat_template_kwargs", "n", "user",
+    "model",
+    "messages",
+    "tools",
+    "tool_choice",
+    "stream",
+    "stream_options",
+    "max_tokens",
+    "temperature",
+    "top_p",
+    "seed",
+    "chat_template_kwargs",
+    "n",
+    "user",
 ];
 
 const MODEL_ID: &str = "dory";
@@ -150,12 +161,23 @@ struct ApiTool {
 fn next_id(prefix: &str) -> String {
     static START: OnceLock<u64> = OnceLock::new();
     static COUNTER: AtomicU64 = AtomicU64::new(0);
-    let start = *START.get_or_init(|| SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0));
-    format!("{prefix}-{start:x}-{:x}", COUNTER.fetch_add(1, Ordering::Relaxed))
+    let start = *START.get_or_init(|| {
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0)
+    });
+    format!(
+        "{prefix}-{start:x}-{:x}",
+        COUNTER.fetch_add(1, Ordering::Relaxed)
+    )
 }
 
 fn now_secs() -> u64 {
-    SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
 }
 
 /// The `usage` object OpenAI clients expect.
@@ -186,7 +208,11 @@ impl ApiError {
             ApiError::BadRequest(m) => (StatusCode::BAD_REQUEST, m),
             ApiError::Internal(m) => (StatusCode::INTERNAL_SERVER_ERROR, m),
         };
-        (status, Json(json!({"error": {"message": msg, "type": "invalid_request_error"}}))).into_response()
+        (
+            status,
+            Json(json!({"error": {"message": msg, "type": "invalid_request_error"}})),
+        )
+            .into_response()
     }
 }
 
@@ -198,8 +224,14 @@ fn content_text(v: &Value) -> Result<String, String> {
             let mut out = String::new();
             for p in parts {
                 match p.get("type").and_then(Value::as_str) {
-                    Some("text") => out.push_str(p.get("text").and_then(Value::as_str).unwrap_or("")),
-                    other => return Err(format!("unsupported content part type {other:?}; only text is supported")),
+                    Some("text") => {
+                        out.push_str(p.get("text").and_then(Value::as_str).unwrap_or(""))
+                    }
+                    other => {
+                        return Err(format!(
+                            "unsupported content part type {other:?}; only text is supported"
+                        ));
+                    }
                 }
             }
             Ok(out)
@@ -234,10 +266,15 @@ fn prepare(req: &ApiRequest, prefill: PrefillSchedule) -> Result<Prepared, ApiEr
         Some(Value::String(s)) if s == "auto" => true,
         Some(Value::String(s)) if s == "none" => false,
         Some(Value::String(s)) if s == "required" => {
-            return Err(bad("tool_choice \"required\" is not supported: the server cannot force a tool call".into()));
+            return Err(bad(
+                "tool_choice \"required\" is not supported: the server cannot force a tool call"
+                    .into(),
+            ));
         }
         Some(Value::Object(_)) => {
-            return Err(bad("a named tool_choice is not supported: the server cannot force a tool call".into()));
+            return Err(bad(
+                "a named tool_choice is not supported: the server cannot force a tool call".into(),
+            ));
         }
         Some(other) => return Err(bad(format!("unsupported tool_choice {other}"))),
     };
@@ -279,9 +316,17 @@ fn prepare(req: &ApiRequest, prefill: PrefillSchedule) -> Result<Prepared, ApiEr
     } else {
         Vec::new()
     };
-    let schemas = tools.iter().map(|t| (t.name.clone(), t.parameters.clone())).collect();
-    let thinking = req.chat_template_kwargs.as_ref().and_then(|k| k.enable_thinking).unwrap_or(true);
-    let prompt = chat::render(&messages, &tools, thinking).map_err(|e| ApiError::BadRequest(e.to_string()))?;
+    let schemas = tools
+        .iter()
+        .map(|t| (t.name.clone(), t.parameters.clone()))
+        .collect();
+    let thinking = req
+        .chat_template_kwargs
+        .as_ref()
+        .and_then(|k| k.enable_thinking)
+        .unwrap_or(true);
+    let prompt = chat::render(&messages, &tools, thinking)
+        .map_err(|e| ApiError::BadRequest(e.to_string()))?;
     let defaults = GenParams::default();
     let params = GenParams {
         seed: req.seed.unwrap_or(defaults.seed),
@@ -292,12 +337,19 @@ fn prepare(req: &ApiRequest, prefill: PrefillSchedule) -> Result<Prepared, ApiEr
         prefill,
         message_starts: Vec::new(),
     };
-    Ok(Prepared { prompt, thinking, schemas, params })
+    Ok(Prepared {
+        prompt,
+        thinking,
+        schemas,
+        params,
+    })
 }
 
 fn map_engine_error(e: EngineError) -> ApiError {
     match e {
-        EngineError::PromptTooLong { .. } | EngineError::EmptyPrompt => ApiError::BadRequest(e.to_string()),
+        EngineError::PromptTooLong { .. } | EngineError::EmptyPrompt => {
+            ApiError::BadRequest(e.to_string())
+        }
         other => ApiError::Internal(other.to_string()),
     }
 }
@@ -312,11 +364,16 @@ fn generate(
     should_stop: impl Fn() -> bool,
     mut on_piece: impl FnMut(Piece),
 ) -> Result<GenStats, ApiError> {
-    let tokens = engine.tokenize(&p.prompt, false, true).map_err(map_engine_error)?;
+    let tokens = engine
+        .tokenize(&p.prompt, false, true)
+        .map_err(map_engine_error)?;
     let prompt_tokens = tokens.len();
     let mut parser = StreamParser::new(p.thinking, p.schemas.clone());
     let mut stats = None;
-    for ev in engine.generate_chat(tokens, p.params.clone()).map_err(map_engine_error)? {
+    for ev in engine
+        .generate_chat(tokens, p.params.clone())
+        .map_err(map_engine_error)?
+    {
         if should_stop() {
             break;
         }
@@ -348,7 +405,10 @@ fn finish_reason(finish: Finish, has_calls: bool) -> &'static str {
     }
 }
 
-async fn chat_completions(State(state): State<Arc<AppState>>, Json(req): Json<ApiRequest>) -> Response {
+async fn chat_completions(
+    State(state): State<Arc<AppState>>,
+    Json(req): Json<ApiRequest>,
+) -> Response {
     let prepared = match prepare(&req, state.prefill) {
         Ok(p) => p,
         Err(e) => return e.response(),
@@ -362,24 +422,32 @@ async fn chat_completions(State(state): State<Arc<AppState>>, Json(req): Json<Ap
 
 async fn blocking_response(state: Arc<AppState>, p: Prepared) -> Response {
     let result = tokio::task::spawn_blocking(move || -> Result<Value, ApiError> {
-        let engine = state.engine.lock().map_err(|_| ApiError::Internal("engine lock poisoned".into()))?;
+        let engine = state
+            .engine
+            .lock()
+            .map_err(|_| ApiError::Internal("engine lock poisoned".into()))?;
         let mut content = String::new();
         let mut reasoning = String::new();
         let mut calls: Vec<Value> = Vec::new();
         let mut malformed: Vec<String> = Vec::new();
-        let stats = generate(&engine, &p, || false, |piece| match piece {
-            Piece::Reasoning(t) => reasoning.push_str(&t),
-            Piece::Content(t) => content.push_str(&t),
-            Piece::ToolCall { name, arguments } => calls.push(json!({
-                "id": next_id("call"),
-                "type": "function",
-                "function": {"name": name, "arguments": Value::Object(arguments).to_string()},
-            })),
-            Piece::MalformedToolCall(raw) => {
-                content.push_str(&raw);
-                malformed.push(raw);
-            }
-        })?;
+        let stats = generate(
+            &engine,
+            &p,
+            || false,
+            |piece| match piece {
+                Piece::Reasoning(t) => reasoning.push_str(&t),
+                Piece::Content(t) => content.push_str(&t),
+                Piece::ToolCall { name, arguments } => calls.push(json!({
+                    "id": next_id("call"),
+                    "type": "function",
+                    "function": {"name": name, "arguments": Value::Object(arguments).to_string()},
+                })),
+                Piece::MalformedToolCall(raw) => {
+                    content.push_str(&raw);
+                    malformed.push(raw);
+                }
+            },
+        )?;
         let mut message = json!({"role": "assistant", "content": content.trim()});
         if !reasoning.trim().is_empty() {
             message["reasoning_content"] = json!(reasoning.trim());
@@ -455,7 +523,10 @@ async fn stream_response(state: Arc<AppState>, p: Prepared) -> Response {
                 calls += 1;
             }
             Piece::MalformedToolCall(raw) => {
-                send(chunk(json!({"content": raw, "malformed_tool_calls": [raw]}), None));
+                send(chunk(
+                    json!({"content": raw, "malformed_tool_calls": [raw]}),
+                    None,
+                ));
             }
         });
         match result {
@@ -470,13 +541,20 @@ async fn stream_response(state: Arc<AppState>, p: Prepared) -> Response {
         }
     });
     use futures::StreamExt;
-    let stream = ReceiverStream::new(rx).map(|v| Ok::<_, std::convert::Infallible>(SseEvent::default().data(v.to_string())));
-    let done = futures::stream::once(async { Ok::<_, std::convert::Infallible>(SseEvent::default().data("[DONE]")) });
-    Sse::new(stream.chain(done)).keep_alive(KeepAlive::default()).into_response()
+    let stream = ReceiverStream::new(rx)
+        .map(|v| Ok::<_, std::convert::Infallible>(SseEvent::default().data(v.to_string())));
+    let done = futures::stream::once(async {
+        Ok::<_, std::convert::Infallible>(SseEvent::default().data("[DONE]"))
+    });
+    Sse::new(stream.chain(done))
+        .keep_alive(KeepAlive::default())
+        .into_response()
 }
 
 async fn models() -> Json<Value> {
-    Json(json!({"object": "list", "data": [{"id": MODEL_ID, "object": "model", "owned_by": "local"}]}))
+    Json(
+        json!({"object": "list", "data": [{"id": MODEL_ID, "object": "model", "owned_by": "local"}]}),
+    )
 }
 
 async fn health() -> &'static str {
@@ -486,12 +564,17 @@ async fn health() -> &'static str {
 #[tokio::main]
 async fn main() -> Result<()> {
     tracing_subscriber::fmt()
-        .with_env_filter(tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()))
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()),
+        )
         .with_writer(std::io::stderr)
         .init();
     let args = Args::parse();
     if !args.host.is_loopback() && !args.allow_remote {
-        bail!("refusing to bind {} without --allow-remote (the endpoint has no authentication)", args.host);
+        bail!(
+            "refusing to bind {} without --allow-remote (the endpoint has no authentication)",
+            args.host
+        );
     }
     let cache_mode = match args.cache_mode.as_str() {
         "per_loop" => CacheMode::PerLoop,
@@ -518,7 +601,10 @@ async fn main() -> Result<()> {
     chat::check_template(&engine.info.chat_template.clone().unwrap_or_default())?;
     tracing::info!(loops = args.loops, ctx = args.ctx, "engine ready");
 
-    let state = Arc::new(AppState { engine: Mutex::new(engine), prefill: args.prefill });
+    let state = Arc::new(AppState {
+        engine: Mutex::new(engine),
+        prefill: args.prefill,
+    });
     let app = Router::new()
         .route("/v1/chat/completions", post(chat_completions))
         .route("/v1/models", get(models))
@@ -526,7 +612,9 @@ async fn main() -> Result<()> {
         .with_state(state);
 
     let addr = SocketAddr::new(args.host, args.port);
-    let listener = tokio::net::TcpListener::bind(addr).await.with_context(|| format!("binding {addr}"))?;
+    let listener = tokio::net::TcpListener::bind(addr)
+        .await
+        .with_context(|| format!("binding {addr}"))?;
     tracing::info!("listening on http://{addr}");
     axum::serve(listener, app).await?;
     Ok(())

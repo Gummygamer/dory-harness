@@ -29,7 +29,9 @@ impl FromStr for PrefillSchedule {
         match s {
             "server" => Ok(PrefillSchedule::Server),
             "single" => Ok(PrefillSchedule::Single),
-            other => Err(format!("unknown prefill schedule '{other}' (use server or single)")),
+            other => Err(format!(
+                "unknown prefill schedule '{other}' (use server or single)"
+            )),
         }
     }
 }
@@ -66,7 +68,13 @@ pub fn chunk_sizes(
     }
 }
 
-fn server_sizes(from: usize, n: usize, n_batch: usize, n_ubatch: usize, message_starts: &[usize]) -> Vec<usize> {
+fn server_sizes(
+    from: usize,
+    n: usize,
+    n_batch: usize,
+    n_ubatch: usize,
+    message_starts: &[usize],
+) -> Vec<usize> {
     // Break when this many tokens remain after the chunk (the server's n_last values).
     let offsets = [(4 + n_ubatch).min(n_batch), 4usize.min(n_batch)];
     let last_user = message_starts.last().copied();
@@ -80,7 +88,9 @@ fn server_sizes(from: usize, n: usize, n_batch: usize, n_ubatch: usize, message_
         while end < n && end - start < n_batch {
             end += 1;
             let user_start = message_starts.contains(&end);
-            let spaced = checkpoints.last().is_none_or(|&c| end > c + CHECKPOINT_MIN_STEP);
+            let spaced = checkpoints
+                .last()
+                .is_none_or(|&c| end > c + CHECKPOINT_MIN_STEP);
             if user_start && (Some(end) == last_user || checkpoints.is_empty() || spaced) {
                 break;
             }
@@ -99,7 +109,9 @@ fn server_sizes(from: usize, n: usize, n_batch: usize, n_ubatch: usize, message_
         }
         // Nothing is in the cache yet at position 0, so the server cannot checkpoint there.
         if want_checkpoint && start > 0 {
-            let spaced = checkpoints.last().is_none_or(|&c| start > c + CHECKPOINT_MIN_STEP);
+            let spaced = checkpoints
+                .last()
+                .is_none_or(|&c| start > c + CHECKPOINT_MIN_STEP);
             if checkpoints.is_empty() || Some(start) == last_user || near_prompt_end || spaced {
                 checkpoints.push(start);
             }
@@ -165,20 +177,29 @@ mod tests {
     fn single_schedule_uses_full_batches() {
         let s = chunk_sizes(PrefillSchedule::Single, 0, 5000, BATCH, UBATCH, &[]);
         assert_eq!(s, vec![2048, 2048, 904]);
-        assert_eq!(chunk_sizes(PrefillSchedule::Single, 0, 275, BATCH, UBATCH, &[]), vec![275]);
+        assert_eq!(
+            chunk_sizes(PrefillSchedule::Single, 0, 275, BATCH, UBATCH, &[]),
+            vec![275]
+        );
     }
 
     #[test]
     fn prefix_offset_only_counts_the_new_tokens() {
         // 484 tokens already cached: the remaining 516 are split as 512 + 4.
-        assert_eq!(chunk_sizes(PrefillSchedule::Server, 484, 1000, BATCH, UBATCH, &[]), vec![512, 4]);
+        assert_eq!(
+            chunk_sizes(PrefillSchedule::Server, 484, 1000, BATCH, UBATCH, &[]),
+            vec![512, 4]
+        );
         assert!(chunk_sizes(PrefillSchedule::Server, 1000, 1000, BATCH, UBATCH, &[]).is_empty());
     }
 
     #[test]
     fn chat_turn_breaks_at_the_user_message() {
         // A user message starts at token 10 of a 28-token prompt: break there, then the usual tail.
-        assert_eq!(chunk_sizes(PrefillSchedule::Server, 0, 28, BATCH, UBATCH, &[10]), vec![10, 14, 4]);
+        assert_eq!(
+            chunk_sizes(PrefillSchedule::Server, 0, 28, BATCH, UBATCH, &[10]),
+            vec![10, 14, 4]
+        );
     }
 
     #[test]
@@ -191,8 +212,14 @@ mod tests {
 
     #[test]
     fn parses_schedule_names() {
-        assert_eq!("server".parse::<PrefillSchedule>(), Ok(PrefillSchedule::Server));
-        assert_eq!("single".parse::<PrefillSchedule>(), Ok(PrefillSchedule::Single));
+        assert_eq!(
+            "server".parse::<PrefillSchedule>(),
+            Ok(PrefillSchedule::Server)
+        );
+        assert_eq!(
+            "single".parse::<PrefillSchedule>(),
+            Ok(PrefillSchedule::Single)
+        );
         assert!("other".parse::<PrefillSchedule>().is_err());
     }
 }

@@ -29,9 +29,14 @@ fn checksum_mismatch_is_reported_with_both_hashes() {
     let file = dir.join("not-the-model.gguf");
     std::fs::write(&file, b"hello").unwrap();
     match dory_engine::verify::verify_model(&file) {
-        Err(Error::Checksum { expected, actual, .. }) => {
+        Err(Error::Checksum {
+            expected, actual, ..
+        }) => {
             assert_eq!(expected, dory_engine::verify::PINNED_MODEL_SHA256);
-            assert_eq!(actual, "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824");
+            assert_eq!(
+                actual,
+                "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
+            );
         }
         other => panic!("expected checksum error, got {other:?}"),
     }

@@ -8,7 +8,9 @@ use serde_json::{Map, Value, json};
 
 use dory_engine::chat::ToolDef;
 
-use super::{MAX_FILE_BYTES, MAX_OUTPUT_BYTES, binary_type, cut_bytes, def, looks_binary, parse_args, shown};
+use super::{
+    MAX_FILE_BYTES, MAX_OUTPUT_BYTES, binary_type, cut_bytes, def, looks_binary, parse_args, shown,
+};
 use crate::{
     tool::{FileLog, Risk, Tool, ToolCtx, ToolOutcome},
     workspace::Access,
@@ -32,7 +34,10 @@ pub fn tools() -> Vec<Box<dyn Tool>> {
 fn walker(root: &Path) -> WalkBuilder {
     let mut b = WalkBuilder::new(root);
     // `require_git(false)`: .gitignore applies in any folder, not only inside a git repository.
-    b.standard_filters(true).require_git(false).hidden(false).sort_by_file_name(|a, b| a.cmp(b));
+    b.standard_filters(true)
+        .require_git(false)
+        .hidden(false)
+        .sort_by_file_name(|a, b| a.cmp(b));
     b.filter_entry(|e| e.file_name() != ".git");
     b
 }
@@ -78,7 +83,10 @@ impl Tool for ListDir {
             Err(e) => return ToolOutcome::err(e.to_string()),
         };
         if !dir.is_dir() {
-            return ToolOutcome::err(format!("'{}' is not a directory; use read_file for files", shown(&raw)));
+            return ToolOutcome::err(format!(
+                "'{}' is not a directory; use read_file for files",
+                shown(&raw)
+            ));
         }
         let depth = a.depth.unwrap_or(1).clamp(1, LIST_MAX_DEPTH);
         let mut lines = Vec::new();
@@ -89,7 +97,12 @@ impl Tool for ListDir {
             }
             total += 1;
             if lines.len() < LIST_MAX_ENTRIES {
-                let rel = entry.path().strip_prefix(&dir).unwrap_or(entry.path()).display().to_string();
+                let rel = entry
+                    .path()
+                    .strip_prefix(&dir)
+                    .unwrap_or(entry.path())
+                    .display()
+                    .to_string();
                 let is_dir = entry.file_type().is_some_and(|t| t.is_dir());
                 lines.push(if is_dir { format!("{rel}/") } else { rel });
             }
@@ -100,10 +113,17 @@ impl Tool for ListDir {
         let mut out = lines.join("\n");
         let mut truncated = false;
         if total > lines.len() {
-            out.push_str(&format!("\n[... {} more entries not shown; list a subdirectory or lower depth]", total - lines.len()));
+            out.push_str(&format!(
+                "\n[... {} more entries not shown; list a subdirectory or lower depth]",
+                total - lines.len()
+            ));
             truncated = true;
         }
-        ToolOutcome { text: out, is_error: false, truncated }
+        ToolOutcome {
+            text: out,
+            is_error: false,
+            truncated,
+        }
     }
 }
 
@@ -193,20 +213,33 @@ fn read_lines(path: &Path, a: &ReadArgs, files: &mut FileLog) -> ToolOutcome {
     let lines: Vec<&str> = text.lines().collect();
     let total = lines.len();
     if total == 0 {
-        return ToolOutcome { text: "[empty file]".into(), is_error: false, truncated: false };
+        return ToolOutcome {
+            text: "[empty file]".into(),
+            is_error: false,
+            truncated: false,
+        };
     }
 
     let start = a.start_line.unwrap_or(1).max(1);
     if start > total {
-        return ToolOutcome::err(format!("start_line {start} is past the end; '{}' has {total} lines", a.path));
+        return ToolOutcome::err(format!(
+            "start_line {start} is past the end; '{}' has {total} lines",
+            a.path
+        ));
     }
-    let count = a.max_lines.unwrap_or(READ_DEFAULT_LINES).clamp(1, READ_MAX_LINES);
+    let count = a
+        .max_lines
+        .unwrap_or(READ_DEFAULT_LINES)
+        .clamp(1, READ_MAX_LINES);
 
     let mut out = String::new();
     let mut shown_to = start - 1;
     for (i, line) in lines.iter().enumerate().skip(start - 1).take(count) {
         let clipped = if line.chars().count() > LINE_CLIP_CHARS {
-            format!("{} [line clipped]", line.chars().take(LINE_CLIP_CHARS).collect::<String>())
+            format!(
+                "{} [line clipped]",
+                line.chars().take(LINE_CLIP_CHARS).collect::<String>()
+            )
         } else {
             line.to_string()
         };
@@ -230,7 +263,11 @@ fn read_lines(path: &Path, a: &ReadArgs, files: &mut FileLog) -> ToolOutcome {
     text.push('\n');
     text.push_str(&notes.join("\n"));
     let cut = cut_bytes(&mut text, MAX_OUTPUT_BYTES + 512);
-    ToolOutcome { text, is_error: false, truncated: truncated || cut }
+    ToolOutcome {
+        text,
+        is_error: false,
+        truncated: truncated || cut,
+    }
 }
 
 pub struct SearchFiles;
@@ -276,7 +313,11 @@ impl Tool for SearchFiles {
             Ok(re) => re,
             Err(e) => return ToolOutcome::err(format!("invalid regular expression: {e}")),
         };
-        let glob = match a.glob.as_deref().map(|g| globset::Glob::new(g).map(|g| g.compile_matcher())) {
+        let glob = match a
+            .glob
+            .as_deref()
+            .map(|g| globset::Glob::new(g).map(|g| g.compile_matcher()))
+        {
             None => None,
             Some(Ok(m)) => Some(m),
             Some(Err(e)) => return ToolOutcome::err(format!("invalid glob: {e}")),
@@ -286,19 +327,34 @@ impl Tool for SearchFiles {
             Ok(p) => p,
             Err(e) => return ToolOutcome::err(e.to_string()),
         };
-        let limit = a.max_results.unwrap_or(SEARCH_DEFAULT_RESULTS).clamp(1, SEARCH_MAX_RESULTS);
+        let limit = a
+            .max_results
+            .unwrap_or(SEARCH_DEFAULT_RESULTS)
+            .clamp(1, SEARCH_MAX_RESULTS);
 
         let mut hits: Vec<String> = Vec::new();
         let mut total = 0usize;
         let files = if root.is_file() {
             vec![root.clone()]
         } else {
-            walker(&root).build().flatten().filter(|e| e.file_type().is_some_and(|t| t.is_file())).map(|e| e.into_path()).collect()
+            walker(&root)
+                .build()
+                .flatten()
+                .filter(|e| e.file_type().is_some_and(|t| t.is_file()))
+                .map(|e| e.into_path())
+                .collect()
         };
         for file in files {
-            let rel = file.strip_prefix(&root).unwrap_or(&file).display().to_string();
+            let rel = file
+                .strip_prefix(&root)
+                .unwrap_or(&file)
+                .display()
+                .to_string();
             if let Some(g) = &glob {
-                let name = file.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+                let name = file
+                    .file_name()
+                    .map(|n| n.to_string_lossy().into_owned())
+                    .unwrap_or_default();
                 if !g.is_match(&rel) && !g.is_match(&name) {
                     continue;
                 }
@@ -307,7 +363,9 @@ impl Tool for SearchFiles {
             if ctx.workspace.hides_from_reads(&file) {
                 continue;
             }
-            let Ok(meta) = fs::metadata(&file) else { continue };
+            let Ok(meta) = fs::metadata(&file) else {
+                continue;
+            };
             if meta.len() > MAX_FILE_BYTES {
                 continue;
             }
@@ -334,9 +392,16 @@ impl Tool for SearchFiles {
         let mut out = hits.join("\n");
         let truncated = total > hits.len();
         if truncated {
-            out.push_str(&format!("\n[{} more matches not shown; narrow the pattern or glob]", total - hits.len()));
+            out.push_str(&format!(
+                "\n[{} more matches not shown; narrow the pattern or glob]",
+                total - hits.len()
+            ));
         }
         let cut = cut_bytes(&mut out, MAX_OUTPUT_BYTES);
-        ToolOutcome { text: out, is_error: false, truncated: truncated || cut }
+        ToolOutcome {
+            text: out,
+            is_error: false,
+            truncated: truncated || cut,
+        }
     }
 }

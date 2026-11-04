@@ -20,8 +20,12 @@ pub const SUMMARY_REQUEST: &str = "Summarize the work so far for yourself: the t
 /// Stage 1. Clears the reasoning of every assistant turn except the last `keep` ones.
 /// Returns how many turns were changed.
 pub fn strip_old_reasoning(messages: &mut [Message], keep: usize) -> usize {
-    let assistants: Vec<usize> =
-        messages.iter().enumerate().filter(|(_, m)| m.role == "assistant").map(|(i, _)| i).collect();
+    let assistants: Vec<usize> = messages
+        .iter()
+        .enumerate()
+        .filter(|(_, m)| m.role == "assistant")
+        .map(|(i, _)| i)
+        .collect();
     let cut = assistants.len().saturating_sub(keep);
     let mut changed = 0;
     for &i in &assistants[..cut] {
@@ -72,14 +76,21 @@ fn clip(s: &str, max: usize) -> String {
 
 /// Whether a tool result reports a failure. Those are kept even when they are old.
 fn is_failure(text: &str) -> bool {
-    text.starts_with("error:") || text.contains("\n[exit ") || (text.starts_with("exit code ") && !text.starts_with("exit code 0"))
+    text.starts_with("error:")
+        || text.contains("\n[exit ")
+        || (text.starts_with("exit code ") && !text.starts_with("exit code 0"))
 }
 
 /// Stage 2. Replaces old tool results with a stub. Keeps the last `keep` results and any failure.
 /// Returns how many results were replaced.
 pub fn stub_old_results(messages: &mut [Message], keep: usize) -> usize {
     let calls = answered_calls(messages);
-    let results: Vec<usize> = messages.iter().enumerate().filter(|(_, m)| m.role == "tool").map(|(i, _)| i).collect();
+    let results: Vec<usize> = messages
+        .iter()
+        .enumerate()
+        .filter(|(_, m)| m.role == "tool")
+        .map(|(i, _)| i)
+        .collect();
     let cut = results.len().saturating_sub(keep);
     let mut stubbed = 0;
     for &i in &results[..cut] {
@@ -95,7 +106,8 @@ pub fn stub_old_results(messages: &mut [Message], keep: usize) -> usize {
             }
             None => "a tool".to_string(),
         };
-        messages[i].content = format!("[output removed to save space: {what}; run it again if needed]");
+        messages[i].content =
+            format!("[output removed to save space: {what}; run it again if needed]");
         stubbed += 1;
     }
     stubbed
@@ -105,8 +117,12 @@ pub fn stub_old_results(messages: &mut [Message], keep: usize) -> usize {
 /// with `summary`. Returns `None` when there is nothing to replace.
 pub fn with_summary(messages: &[Message], summary: &str) -> Option<Vec<Message>> {
     let task = messages.iter().position(|m| m.role == "user")?;
-    let assistants: Vec<usize> =
-        messages.iter().enumerate().filter(|(_, m)| m.role == "assistant").map(|(i, _)| i).collect();
+    let assistants: Vec<usize> = messages
+        .iter()
+        .enumerate()
+        .filter(|(_, m)| m.role == "assistant")
+        .map(|(i, _)| i)
+        .collect();
     if assistants.len() <= KEEP_REASONING_TURNS {
         return None;
     }
@@ -131,7 +147,10 @@ mod tests {
     fn call(name: &str, arg: &str) -> ToolCall {
         let mut arguments = Map::new();
         arguments.insert("path".into(), Value::String(arg.into()));
-        ToolCall { name: name.into(), arguments }
+        ToolCall {
+            name: name.into(),
+            arguments,
+        }
     }
 
     fn assistant(content: &str, reasoning: Option<&str>, calls: Vec<ToolCall>) -> Message {
@@ -173,7 +192,10 @@ mod tests {
         let mut m = sample();
         let n = stub_old_results(&mut m, KEEP_RESULTS);
         assert_eq!(n, 1, "only the old success is stubbed; the failure is kept");
-        assert_eq!(m[3].content, r#"[output removed to save space: read_file {"path":"a.rs"}; run it again if needed]"#);
+        assert_eq!(
+            m[3].content,
+            r#"[output removed to save space: read_file {"path":"a.rs"}; run it again if needed]"#
+        );
         assert_eq!(m[5].content, "error: not found");
         assert_eq!(m[7].content, "newest result");
         assert_eq!(m[9].content, "last result");
@@ -186,7 +208,14 @@ mod tests {
         arguments.insert("content".into(), Value::String(big.clone()));
         let mut m = vec![
             Message::new("user", "task"),
-            assistant("", None, vec![ToolCall { name: "write_file".into(), arguments }]),
+            assistant(
+                "",
+                None,
+                vec![ToolCall {
+                    name: "write_file".into(),
+                    arguments,
+                }],
+            ),
             Message::new("tool", &big),
             assistant("", None, vec![call("read_file", "a")]),
             Message::new("tool", "one"),
@@ -195,7 +224,11 @@ mod tests {
         ];
         let before: usize = m[2].content.len();
         assert_eq!(stub_old_results(&mut m, KEEP_RESULTS), 1);
-        assert!(m[2].content.len() < before / 10, "stub is {} bytes", m[2].content.len());
+        assert!(
+            m[2].content.len() < before / 10,
+            "stub is {} bytes",
+            m[2].content.len()
+        );
     }
 
     #[test]
@@ -203,7 +236,21 @@ mod tests {
         let mut m = sample();
         stub_old_results(&mut m, KEEP_RESULTS);
         let roles: Vec<&str> = m.iter().map(|x| x.role.as_str()).collect();
-        assert_eq!(roles, ["system", "user", "assistant", "tool", "assistant", "tool", "assistant", "tool", "assistant", "tool"]);
+        assert_eq!(
+            roles,
+            [
+                "system",
+                "user",
+                "assistant",
+                "tool",
+                "assistant",
+                "tool",
+                "assistant",
+                "tool",
+                "assistant",
+                "tool"
+            ]
+        );
     }
 
     #[test]

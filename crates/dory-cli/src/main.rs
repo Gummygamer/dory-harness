@@ -11,19 +11,15 @@ use std::{
 use anyhow::{Context as _, Result, bail};
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use dory_agent::{
-    Agent, AgentConfig, AgentEvent, Reason, Registry, ToolCtx, TurnReport,
-    policy::Policy,
-    backend::EngineBackend,
-    tools::ToolSet,
-    workspace::Workspace,
+    Agent, AgentConfig, AgentEvent, Reason, Registry, ToolCtx, TurnReport, backend::EngineBackend,
+    policy::Policy, tools::ToolSet, workspace::Workspace,
 };
 use dory_engine::{
     CacheMode, Engine, EngineOptions, Event, GenParams, LoadOptions, PrefillSchedule,
     chat::{self, Message, ToolDef},
     model::Model,
     parse::{Piece, StreamParser},
-    tokenize_model,
-    verify,
+    tokenize_model, verify,
 };
 
 mod agent_cmd;
@@ -78,7 +74,12 @@ struct GenArgs {
     #[arg(long, global = true, default_value_t = 42)]
     seed: u32,
     /// 0 selects greedy decoding.
-    #[arg(long, global = true, default_value_t = 1.0, allow_negative_numbers = true)]
+    #[arg(
+        long,
+        global = true,
+        default_value_t = 1.0,
+        allow_negative_numbers = true
+    )]
     temp: f32,
     #[arg(long, global = true, default_value_t = 0.95)]
     top_p: f32,
@@ -135,9 +136,7 @@ enum Cmd {
     /// Verify the checksum and print model metadata (no GPU memory used).
     Info,
     /// Render a case file ({messages, tools?, enable_thinking?}) to the exact prompt and token IDs, as JSON.
-    Template {
-        case: PathBuf,
-    },
+    Template { case: PathBuf },
     /// Answer one prompt and exit.
     Run {
         prompt: String,
@@ -172,7 +171,9 @@ enum Cmd {
 
 fn main() -> Result<()> {
     tracing_subscriber::fmt()
-        .with_env_filter(tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "warn".into()))
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "warn".into()),
+        )
         .with_writer(std::io::stderr)
         .init();
     let cli = Cli::parse();
@@ -188,7 +189,10 @@ fn main() -> Result<()> {
         Cmd::Run { prompt, system } => run(&cli, prompt, system.as_deref()),
         Cmd::Chat { system } => chat_repl(&cli, system.as_deref()),
         Cmd::Raw { case, chat_turn } => raw(&cli, case, *chat_turn),
-        Cmd::Bench { prompt_tokens, gen_tokens } => bench(&cli, *prompt_tokens, *gen_tokens),
+        Cmd::Bench {
+            prompt_tokens,
+            gen_tokens,
+        } => bench(&cli, *prompt_tokens, *gen_tokens),
         Cmd::Agent(args) => {
             let code = agent_cmd::run(&cli, args)?;
             std::process::exit(code);
@@ -199,30 +203,33 @@ fn main() -> Result<()> {
 impl LoadArgs {
     /// The GGUF path from `--model` or `DORY_MODEL`.
     fn model_path(&self) -> Result<&Path> {
-        self.model.as_deref().context("no model given: pass --model or set DORY_MODEL to the GGUF file")
+        self.model
+            .as_deref()
+            .context("no model given: pass --model or set DORY_MODEL to the GGUF file")
     }
 }
 
 fn engine_options(load: &LoadArgs, vocab_only: bool) -> Result<EngineOptions> {
-    let mut opts = EngineOptions::new(LoadOptions {
-        path: load.model_path()?.to_path_buf(),
+    let config = dory_app::config::LoadConfig {
+        model: load.model_path()?.to_path_buf(),
         loops: load.loops,
         cache_mode: load.cache_mode.into(),
-        n_gpu_layers: load.gpu_layers,
-        vocab_only,
-    });
-    opts.n_ctx = load.ctx;
-    opts.n_batch = load.batch;
-    opts.n_ubatch = load.ubatch;
-    opts.threads = load.threads;
-    opts.prefix_reuse = load.prefix_reuse;
-    opts.swa_full = load.swa_full;
-    opts.flash_attn = match load.flash_attn {
-        FlashArg::Auto => dory_engine::model::FlashAttn::Auto,
-        FlashArg::On => dory_engine::model::FlashAttn::On,
-        FlashArg::Off => dory_engine::model::FlashAttn::Off,
+        context: load.ctx,
+        batch: load.batch,
+        micro_batch: load.ubatch,
+        gpu_layers: load.gpu_layers,
+        threads: load.threads,
+        flash_attention: match load.flash_attn {
+            FlashArg::Auto => dory_engine::model::FlashAttn::Auto,
+            FlashArg::On => dory_engine::model::FlashAttn::On,
+            FlashArg::Off => dory_engine::model::FlashAttn::Off,
+        },
+        prefix_reuse: load.prefix_reuse,
+        swa_full: load.swa_full,
     };
-    Ok(opts)
+    config
+        .engine_options_with_vocab_only(vocab_only)
+        .map_err(anyhow::Error::msg)
 }
 
 fn start_engine(cli: &Cli) -> Result<Engine> {
@@ -256,11 +263,19 @@ fn info(load: &LoadArgs) -> Result<()> {
     println!("sha256:             ok ({})", verify::PINNED_MODEL_SHA256);
     println!("fork commit:        ok ({})", verify::PINNED_FORK_COMMIT);
     println!("chat template:      ok (Dory format)");
-    println!("dory.block_count:   {}", model.meta("dory.block_count").unwrap_or_default());
-    println!("dory.num_loops:     {} (GGUF default)", model.meta("dory.num_loops").unwrap_or_default());
+    println!(
+        "dory.block_count:   {}",
+        model.meta("dory.block_count").unwrap_or_default()
+    );
+    println!(
+        "dory.num_loops:     {} (GGUF default)",
+        model.meta("dory.num_loops").unwrap_or_default()
+    );
     println!(
         "dory.cache_mode:    {} (GGUF default)",
-        model.meta("dory.recurrent_kv_cache_mode").unwrap_or_default()
+        model
+            .meta("dory.recurrent_kv_cache_mode")
+            .unwrap_or_default()
     );
     println!(
         "loops in use:       {} ({} virtual layers = 32 + 40 x loops), cache {}",
@@ -322,7 +337,8 @@ fn load_tools(gen_args: &GenArgs) -> Result<Registry> {
         Some(p) => ToolSet::load(p)?,
         None => ToolSet::default(),
     };
-    let workspace = Workspace::new(&std::env::current_dir()?, &[]).context("opening the current directory")?;
+    let workspace =
+        Workspace::new(&std::env::current_dir()?, &[]).context("opening the current directory")?;
     let mut registry = Registry::new(ToolCtx::new(workspace));
     set.register_into(&mut registry)?;
     Ok(registry)
@@ -333,7 +349,12 @@ fn vram_mib() -> Option<u64> {
         .args(["--query-gpu=memory.used", "--format=csv,noheader,nounits"])
         .output()
         .ok()?;
-    String::from_utf8_lossy(&out.stdout).lines().next()?.trim().parse().ok()
+    String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .next()?
+        .trim()
+        .parse()
+        .ok()
 }
 
 fn run(cli: &Cli, prompt: &str, system: Option<&str>) -> Result<()> {
@@ -352,7 +373,12 @@ fn run(cli: &Cli, prompt: &str, system: Option<&str>) -> Result<()> {
 
 /// Runs one user turn through the agent loop and prints its events the way the CLI always has:
 /// the answer on stdout, everything else on stderr.
-fn run_turn(cli: &Cli, engine: &Engine, tools: &Registry, messages: &mut Vec<Message>) -> Result<TurnReport> {
+fn run_turn(
+    cli: &Cli,
+    engine: &Engine,
+    tools: &Registry,
+    messages: &mut Vec<Message>,
+) -> Result<TurnReport> {
     let backend = EngineBackend { engine };
     // run and chat: the --tools file is the allowlist, so nothing asks.
     let policy = Policy::allow_all();
@@ -382,7 +408,11 @@ fn print_event(ev: AgentEvent, show_reasoning: bool, max_rounds: usize, verbose:
             let _ = stdout().flush();
         }
         AgentEvent::ToolCall { name, arguments } => {
-            let _ = writeln!(stderr(), "\n[tool call] {name} {}", serde_json::Value::Object(arguments));
+            let _ = writeln!(
+                stderr(),
+                "\n[tool call] {name} {}",
+                serde_json::Value::Object(arguments)
+            );
         }
         AgentEvent::MalformedCall(_) => {
             let _ = writeln!(stderr(), "\n[warning] malformed tool call kept as text");
@@ -392,8 +422,15 @@ fn print_event(ev: AgentEvent, show_reasoning: bool, max_rounds: usize, verbose:
             let _ = writeln!(stderr(), "[tool result] {shown}");
         }
         AgentEvent::RoundStats(_) | AgentEvent::MessageAdded(_) => {}
-        AgentEvent::Compacted { stage, before, after } => {
-            let _ = writeln!(stderr(), "\n[context compacted: stage {stage}, {before} -> {after} tokens]");
+        AgentEvent::Compacted {
+            stage,
+            before,
+            after,
+        } => {
+            let _ = writeln!(
+                stderr(),
+                "\n[context compacted: stage {stage}, {before} -> {after} tokens]"
+            );
         }
         AgentEvent::Finished(Reason::RoundLimit) => {
             let _ = writeln!(stderr(), "\n[stopped after {max_rounds} tool rounds]");
@@ -415,7 +452,11 @@ fn truncate(s: &str, n: usize) -> String {
 
 fn print_stats(report: &TurnReport) {
     for s in &report.stats {
-        let gen_tps = if s.gen_ms > 0.0 { s.generated as f64 / (s.gen_ms / 1e3) } else { 0.0 };
+        let gen_tps = if s.gen_ms > 0.0 {
+            s.generated as f64 / (s.gen_ms / 1e3)
+        } else {
+            0.0
+        };
         let prompt_tps = if s.prompt_ms > 0.0 {
             (s.prompt_tokens - s.reused_tokens) as f64 / (s.prompt_ms / 1e3)
         } else {
@@ -431,7 +472,9 @@ fn print_stats(report: &TurnReport) {
 fn chat_repl(cli: &Cli, system: Option<&str>) -> Result<()> {
     let engine = start_engine(cli)?;
     let tools = load_tools(&cli.gen_args)?;
-    let mut messages: Vec<Message> = system.map(|s| vec![Message::new("system", s)]).unwrap_or_default();
+    let mut messages: Vec<Message> = system
+        .map(|s| vec![Message::new("system", s)])
+        .unwrap_or_default();
     eprintln!("ready. /reset, /save PATH, /load PATH, /exit");
     let mut lines = stdin().lock().lines();
     loop {
@@ -447,20 +490,28 @@ fn chat_repl(cli: &Cli, system: Option<&str>) -> Result<()> {
             break;
         }
         if line == "/reset" {
-            messages = system.map(|s| vec![Message::new("system", s)]).unwrap_or_default();
+            messages = system
+                .map(|s| vec![Message::new("system", s)])
+                .unwrap_or_default();
             engine.clear_session()?;
             eprintln!("[session cleared]");
             continue;
         }
         if let Some(path) = line.strip_prefix("/save ") {
             let bytes = engine.save_session(path.trim())?;
-            std::fs::write(format!("{}.messages.json", path.trim()), serde_json::to_string_pretty(&messages)?)?;
+            std::fs::write(
+                format!("{}.messages.json", path.trim()),
+                serde_json::to_string_pretty(&messages)?,
+            )?;
             eprintln!("[saved {bytes} bytes of KV cache]");
             continue;
         }
         if let Some(path) = line.strip_prefix("/load ") {
             let cached = engine.load_session(path.trim())?;
-            messages = serde_json::from_str(&std::fs::read_to_string(format!("{}.messages.json", path.trim()))?)?;
+            messages = serde_json::from_str(&std::fs::read_to_string(format!(
+                "{}.messages.json",
+                path.trim()
+            ))?)?;
             eprintln!("[loaded {cached} cached tokens]");
             continue;
         }
@@ -581,7 +632,10 @@ fn bench(cli: &Cli, prompt_tokens: usize, gen_tokens: u32) -> Result<()> {
     let mut tokens = engine.tokenize(&text, false, false)?;
     let ctx = cli.load.ctx as usize;
     if tokens.len() + gen_tokens as usize >= ctx {
-        bail!("prompt ({}) plus gen tokens ({gen_tokens}) must fit in ctx {ctx}", tokens.len());
+        bail!(
+            "prompt ({}) plus gen tokens ({gen_tokens}) must fit in ctx {ctx}",
+            tokens.len()
+        );
     }
     tokens.truncate(prompt_tokens.max(1));
 
@@ -602,7 +656,12 @@ fn bench(cli: &Cli, prompt_tokens: usize, gen_tokens: u32) -> Result<()> {
         stats.generated,
         vram.map(|v| v.to_string()).unwrap_or_else(|| "n/a".into()),
         cli.gen_args.prefill,
-        stats.chunks.iter().map(|c| c.to_string()).collect::<Vec<_>>().join("+"),
+        stats
+            .chunks
+            .iter()
+            .map(|c| c.to_string())
+            .collect::<Vec<_>>()
+            .join("+"),
         prefill_tps,
         decode_tps,
         wall

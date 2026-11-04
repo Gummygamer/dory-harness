@@ -132,7 +132,11 @@ pub enum Event {
     /// A chunk of decoded text. Chunks never split a UTF-8 character.
     Text(String),
     /// Emitted before the text of each generated token, only when `top_logprobs > 0`.
-    Token { id: i32, logprob: f32, top: Vec<(i32, f32)> },
+    Token {
+        id: i32,
+        logprob: f32,
+        top: Vec<(i32, f32)>,
+    },
     Done(GenStats),
 }
 
@@ -238,9 +242,16 @@ impl Engine {
         let thread = std::thread::Builder::new()
             .name("dory-engine".into())
             .spawn(move || worker(opts, rx, ready_tx))
-            .map_err(|e| Error::Io { path: "dory-engine thread".into(), source: e })?;
+            .map_err(|e| Error::Io {
+                path: "dory-engine thread".into(),
+                source: e,
+            })?;
         let info = ready_rx.recv().map_err(|_| Error::EngineStopped)??;
-        Ok(Engine { tx, thread: Some(thread), info })
+        Ok(Engine {
+            tx,
+            thread: Some(thread),
+            info,
+        })
     }
 
     fn send(&self, cmd: Command) -> Result<()> {
@@ -249,7 +260,12 @@ impl Engine {
 
     pub fn tokenize(&self, text: &str, add_special: bool, parse_special: bool) -> Result<Vec<i32>> {
         let (reply, rx) = mpsc::channel();
-        self.send(Command::Tokenize { text: text.to_string(), add_special, parse_special, reply })?;
+        self.send(Command::Tokenize {
+            text: text.to_string(),
+            add_special,
+            parse_special,
+            reply,
+        })?;
         rx.recv().map_err(|_| Error::EngineStopped)?
     }
 
@@ -258,8 +274,17 @@ impl Engine {
     pub fn generate(&self, prompt: Vec<i32>, params: GenParams) -> Result<Generation> {
         let (events, rx) = mpsc::channel();
         let cancel = Arc::new(AtomicBool::new(false));
-        self.send(Command::Generate { prompt, params, cancel: cancel.clone(), events })?;
-        Ok(Generation { rx, cancel, finished: false })
+        self.send(Command::Generate {
+            prompt,
+            params,
+            cancel: cancel.clone(),
+            events,
+        })?;
+        Ok(Generation {
+            rx,
+            cancel,
+            finished: false,
+        })
     }
 
     /// Like [`Engine::generate`], for a rendered chat prompt. Finds the user-message starts in the
@@ -292,14 +317,20 @@ impl Engine {
     /// Writes the KV cache for the current conversation to `path`. Returns the bytes written.
     pub fn save_session(&self, path: &str) -> Result<usize> {
         let (reply, rx) = mpsc::channel();
-        self.send(Command::SaveSession { path: path.to_string(), reply })?;
+        self.send(Command::SaveSession {
+            path: path.to_string(),
+            reply,
+        })?;
         rx.recv().map_err(|_| Error::EngineStopped)?
     }
 
     /// Restores a session written by `save_session`. Returns the number of cached tokens.
     pub fn load_session(&self, path: &str) -> Result<usize> {
         let (reply, rx) = mpsc::channel();
-        self.send(Command::LoadSession { path: path.to_string(), reply })?;
+        self.send(Command::LoadSession {
+            path: path.to_string(),
+            reply,
+        })?;
         rx.recv().map_err(|_| Error::EngineStopped)?
     }
 }
@@ -334,7 +365,11 @@ fn worker(opts: EngineOptions, rx: Receiver<Command>, ready: Sender<Result<Model
                 flash_attn: opts.flash_attn,
             },
         )?;
-        Ok(Worker { opts: opts.clone(), ctx, kv: Vec::new() })
+        Ok(Worker {
+            opts: opts.clone(),
+            ctx,
+            kv: Vec::new(),
+        })
     })();
     let mut worker = match setup {
         Ok(w) => w,
@@ -355,10 +390,25 @@ fn worker(opts: EngineOptions, rx: Receiver<Command>, ready: Sender<Result<Model
 
     for cmd in rx {
         match cmd {
-            Command::Tokenize { text, add_special, parse_special, reply } => {
-                let _ = reply.send(tokenize_model(worker.ctx.model(), &text, add_special, parse_special));
+            Command::Tokenize {
+                text,
+                add_special,
+                parse_special,
+                reply,
+            } => {
+                let _ = reply.send(tokenize_model(
+                    worker.ctx.model(),
+                    &text,
+                    add_special,
+                    parse_special,
+                ));
             }
-            Command::Generate { prompt, params, cancel, events } => {
+            Command::Generate {
+                prompt,
+                params,
+                cancel,
+                events,
+            } => {
                 if let Err(e) = worker.generate(prompt, &params, &cancel, &events) {
                     // A failed decode can leave the cache half-written, so drop it.
                     worker.ctx.clear_kv();
@@ -411,12 +461,19 @@ impl Worker {
         }
         let n_ctx = self.ctx.n_ctx() as usize;
         if prompt.len() >= n_ctx {
-            return Err(Error::PromptTooLong { prompt: prompt.len(), n_ctx: n_ctx as u32 });
+            return Err(Error::PromptTooLong {
+                prompt: prompt.len(),
+                n_ctx: n_ctx as u32,
+            });
         }
 
         // Keep the shared prefix, drop the rest. Always re-run at least the last prompt token,
         // because sampling needs its logits.
-        let shared = if self.opts.prefix_reuse { common_prefix(&self.kv, &prompt) } else { 0 };
+        let shared = if self.opts.prefix_reuse {
+            common_prefix(&self.kv, &prompt)
+        } else {
+            0
+        };
         let reused = shared.min(prompt.len() - 1);
         if reused < self.kv.len() {
             self.ctx.truncate_kv(reused);
@@ -477,11 +534,22 @@ impl Worker {
             }
             // Budget check: this token must be decoded, so it needs a free cache slot.
             if self.kv.len() >= n_ctx {
-                return Err(Error::ContextExhausted { pos: self.kv.len(), n_ctx: n_ctx as u32 });
+                return Err(Error::ContextExhausted {
+                    pos: self.kv.len(),
+                    n_ctx: n_ctx as u32,
+                });
             }
             if params.top_logprobs > 0 {
-                let (logprob, top) = token_probs(self.ctx.last_logits(), tok, params.top_logprobs as usize);
-                if events.send(Ok(Event::Token { id: tok, logprob, top })).is_err() {
+                let (logprob, top) =
+                    token_probs(self.ctx.last_logits(), tok, params.top_logprobs as usize);
+                if events
+                    .send(Ok(Event::Token {
+                        id: tok,
+                        logprob,
+                        top,
+                    }))
+                    .is_err()
+                {
                     break Finish::Cancelled;
                 }
             }
@@ -514,10 +582,14 @@ impl Worker {
     fn piece(&self, token: i32) -> Vec<u8> {
         let vocab = self.ctx.model().vocab();
         let mut buf = vec![0 as c_char; 64];
-        let mut n = unsafe { sys::llama_token_to_piece(vocab, token, buf.as_mut_ptr(), buf.len() as i32, 0, true) };
+        let mut n = unsafe {
+            sys::llama_token_to_piece(vocab, token, buf.as_mut_ptr(), buf.len() as i32, 0, true)
+        };
         if n < 0 {
             buf = vec![0 as c_char; (-n) as usize];
-            n = unsafe { sys::llama_token_to_piece(vocab, token, buf.as_mut_ptr(), buf.len() as i32, 0, true) };
+            n = unsafe {
+                sys::llama_token_to_piece(vocab, token, buf.as_mut_ptr(), buf.len() as i32, 0, true)
+            };
         }
         buf[..n.max(0) as usize].iter().map(|&b| b as u8).collect()
     }
@@ -525,7 +597,13 @@ impl Worker {
     fn save_session(&self, path: &str) -> Result<usize> {
         let cpath = CString::new(path).map_err(|_| Error::Session("path contains NUL".into()))?;
         let written = unsafe {
-            sys::llama_state_seq_save_file(self.ctx.as_ptr(), cpath.as_ptr(), 0, self.kv.as_ptr(), self.kv.len())
+            sys::llama_state_seq_save_file(
+                self.ctx.as_ptr(),
+                cpath.as_ptr(),
+                0,
+                self.kv.as_ptr(),
+                self.kv.len(),
+            )
         };
         if written == 0 {
             return Err(Error::Session(format!("could not write {path}")));
@@ -543,7 +621,14 @@ impl Worker {
         let mut tokens = vec![0i32; cap];
         let mut count = 0usize;
         let ok = unsafe {
-            sys::llama_state_seq_load_file(self.ctx.as_ptr(), cpath.as_ptr(), 0, tokens.as_mut_ptr(), cap, &mut count)
+            sys::llama_state_seq_load_file(
+                self.ctx.as_ptr(),
+                cpath.as_ptr(),
+                0,
+                tokens.as_mut_ptr(),
+                cap,
+                &mut count,
+            )
         };
         if ok == 0 {
             self.ctx.clear_kv();
@@ -564,10 +649,15 @@ fn token_probs(logits: &[f32], chosen: i32, k: usize) -> (f32, Vec<(i32, f32)>) 
     let lp = |i: usize| (logits[i] as f64 - lse) as f32;
     let k = k.clamp(1, logits.len());
     let mut idx: Vec<usize> = (0..logits.len()).collect();
-    idx.select_nth_unstable_by(k - 1, |&a, &b| logits[b].partial_cmp(&logits[a]).unwrap_or(Ordering::Equal));
+    idx.select_nth_unstable_by(k - 1, |&a, &b| {
+        logits[b].partial_cmp(&logits[a]).unwrap_or(Ordering::Equal)
+    });
     let mut top = idx[..k].to_vec();
     top.sort_by(|&a, &b| logits[b].partial_cmp(&logits[a]).unwrap_or(Ordering::Equal));
-    (lp(chosen as usize), top.into_iter().map(|i| (i as i32, lp(i))).collect())
+    (
+        lp(chosen as usize),
+        top.into_iter().map(|i| (i as i32, lp(i))).collect(),
+    )
 }
 
 fn common_prefix(a: &[i32], b: &[i32]) -> usize {
@@ -575,7 +665,12 @@ fn common_prefix(a: &[i32], b: &[i32]) -> usize {
 }
 
 /// Tokenizes with a model's vocabulary alone; no context or GPU memory needed.
-pub fn tokenize_model(model: &Model, text: &str, add_special: bool, parse_special: bool) -> Result<Vec<i32>> {
+pub fn tokenize_model(
+    model: &Model,
+    text: &str,
+    add_special: bool,
+    parse_special: bool,
+) -> Result<Vec<i32>> {
     let vocab = model.vocab();
     let bytes = text.as_bytes();
     let mut cap = bytes.len() + 16;
@@ -676,7 +771,11 @@ impl Utf8Stream {
 
     fn finish(&mut self) -> String {
         let rest = std::mem::take(&mut self.pending);
-        if rest.is_empty() { String::new() } else { String::from_utf8_lossy(&rest).into_owned() }
+        if rest.is_empty() {
+            String::new()
+        } else {
+            String::from_utf8_lossy(&rest).into_owned()
+        }
     }
 }
 

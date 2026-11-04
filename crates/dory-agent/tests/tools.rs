@@ -29,7 +29,10 @@ fn args(v: Value) -> Map<String, Value> {
 #[test]
 fn unknown_tool_is_refused() {
     let out = set().call("rm_rf", &args(json!({})));
-    assert!(out.starts_with("error:") && out.contains("unknown tool"), "{out}");
+    assert!(
+        out.starts_with("error:") && out.contains("unknown tool"),
+        "{out}"
+    );
 }
 
 #[test]
@@ -55,7 +58,11 @@ fn tools_file_loads_and_exposes_definitions_without_exec() {
     let dir = std::env::temp_dir().join(format!("dory-tools-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let path = dir.join("tools.json");
-    std::fs::write(&path, r#"[{"name":"t","parameters":{"type":"object","properties":{}},"exec":["true"]}]"#).unwrap();
+    std::fs::write(
+        &path,
+        r#"[{"name":"t","parameters":{"type":"object","properties":{}},"exec":["true"]}]"#,
+    )
+    .unwrap();
     let loaded = ToolSet::load(&path).unwrap();
     let defs = loaded.defs();
     assert_eq!(defs.len(), 1);
@@ -70,7 +77,11 @@ fn failing_command_reports_exit_code_and_stderr() {
             name: "fails".into(),
             description: None,
             parameters: json!({"type": "object", "properties": {}}),
-            exec: Some(vec!["sh".into(), "-c".into(), "echo partial; echo bad >&2; exit 2".into()]),
+            exec: Some(vec![
+                "sh".into(),
+                "-c".into(),
+                "echo partial; echo bad >&2; exit 2".into(),
+            ]),
         }],
     };
     let out = tools.call("fails", &args(json!({})));

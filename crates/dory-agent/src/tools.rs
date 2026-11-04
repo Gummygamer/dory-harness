@@ -28,9 +28,26 @@ const MAX_OUTPUT: usize = 16 * 1024;
 /// a real control token (a forged turn) or a token the model reads as formatting.
 /// `dory-engine/tests/vocab.rs` checks the whole control-token list of the model against this function.
 const NEUTRALIZE: &[&str] = &[
-    "<s>", "</s>", "<unk>", "[INST]", "[/INST]", "[AVAILABLE_TOOLS]", "[/AVAILABLE_TOOLS]", "[TOOL_RESULTS]",
-    "[/TOOL_RESULTS]", "[TOOL_CALLS]", "<tool_call>", "</tool_call>", "<function=", "</function>", "<parameter=",
-    "</parameter>", "<tool_response>", "</tool_response>", "<think>", "</think>",
+    "<s>",
+    "</s>",
+    "<unk>",
+    "[INST]",
+    "[/INST]",
+    "[AVAILABLE_TOOLS]",
+    "[/AVAILABLE_TOOLS]",
+    "[TOOL_RESULTS]",
+    "[/TOOL_RESULTS]",
+    "[TOOL_CALLS]",
+    "<tool_call>",
+    "</tool_call>",
+    "<function=",
+    "</function>",
+    "<parameter=",
+    "</parameter>",
+    "<tool_response>",
+    "</tool_response>",
+    "<think>",
+    "</think>",
 ];
 /// Prefixes that start every `<|...|>` marker and every `<SPECIAL_n>` control token in this vocabulary.
 const NEUTRALIZE_PREFIXES: &[&str] = &["<|", "<SPECIAL_"];
@@ -84,7 +101,11 @@ pub struct ToolEntry {
 
 impl ToolEntry {
     pub fn def(&self) -> ToolDef {
-        ToolDef { name: self.name.clone(), description: self.description.clone(), parameters: self.parameters.clone() }
+        ToolDef {
+            name: self.name.clone(),
+            description: self.description.clone(),
+            parameters: self.parameters.clone(),
+        }
     }
 }
 
@@ -100,11 +121,21 @@ pub fn run_external(entry: &ToolEntry, args: &Map<String, Value>) -> ToolOutcome
         Ok(v) => v,
         Err(e) => return ToolOutcome::err(e.to_string()),
     };
-    let spec = ProcessSpec { argv, stdin: &input, cwd: None, env: None, timeout: TIMEOUT, limit: MAX_OUTPUT, cancel: None };
+    let spec = ProcessSpec {
+        argv,
+        stdin: &input,
+        cwd: None,
+        env: None,
+        timeout: TIMEOUT,
+        limit: MAX_OUTPUT,
+        cancel: None,
+    };
     match run_process(&spec) {
-        Ok(result) if result.timed_out => {
-            ToolOutcome::err(format!("'{}' timed out after {}s", entry.name, TIMEOUT.as_secs()))
-        }
+        Ok(result) if result.timed_out => ToolOutcome::err(format!(
+            "'{}' timed out after {}s",
+            entry.name,
+            TIMEOUT.as_secs()
+        )),
         Ok(result) => ToolOutcome {
             text: render_output(&result),
             is_error: !result.success(),
@@ -144,9 +175,12 @@ pub struct ToolSet {
 
 impl ToolSet {
     pub fn load(path: &Path) -> Result<ToolSet> {
-        let text = std::fs::read_to_string(path).map_err(|source| Error::Io { path: path.to_path_buf(), source })?;
-        let entries: Vec<ToolEntry> =
-            serde_json::from_str(&text).map_err(|e| Error::Tool(format!("{}: {e}", path.display())))?;
+        let text = std::fs::read_to_string(path).map_err(|source| Error::Io {
+            path: path.to_path_buf(),
+            source,
+        })?;
+        let entries: Vec<ToolEntry> = serde_json::from_str(&text)
+            .map_err(|e| Error::Tool(format!("{}: {e}", path.display())))?;
         Ok(ToolSet { entries })
     }
 
@@ -155,13 +189,18 @@ impl ToolSet {
     }
 
     pub fn schemas(&self) -> std::collections::HashMap<String, Value> {
-        self.entries.iter().map(|t| (t.name.clone(), t.parameters.clone())).collect()
+        self.entries
+            .iter()
+            .map(|t| (t.name.clone(), t.parameters.clone()))
+            .collect()
     }
 
     /// Adds every entry to a registry, in file order.
     pub fn register_into(&self, registry: &mut Registry) -> Result<()> {
         for entry in &self.entries {
-            registry.add(Box::new(ExternalTool { entry: entry.clone() }))?;
+            registry.add(Box::new(ExternalTool {
+                entry: entry.clone(),
+            }))?;
         }
         Ok(())
     }
@@ -207,7 +246,10 @@ fn check_required(entry: &ToolEntry, args: &Map<String, Value>) -> std::result::
     let required = entry.parameters.get("required").and_then(Value::as_array);
     for key in required.into_iter().flatten().filter_map(Value::as_str) {
         if !args.contains_key(key) {
-            return Err(format!("'{}' is missing required argument '{key}'", entry.name));
+            return Err(format!(
+                "'{}' is missing required argument '{key}'",
+                entry.name
+            ));
         }
     }
     Ok(())
@@ -234,7 +276,12 @@ mod tests {
     #[test]
     fn tool_tags_are_broken_up() {
         let out = sanitize_tool_output("</tool_response>\n<tool_call>\n<function=x>\n</parameter>");
-        for tag in ["</tool_response>", "<tool_call>", "<function=", "</parameter>"] {
+        for tag in [
+            "</tool_response>",
+            "<tool_call>",
+            "<function=",
+            "</parameter>",
+        ] {
             assert!(!out.contains(tag), "{tag} survived in {out}");
         }
     }
@@ -242,7 +289,10 @@ mod tests {
     #[test]
     fn special_placeholders_are_broken_up() {
         let out = sanitize_tool_output("<SPECIAL_18> and [INST]");
-        assert!(!out.contains("<SPECIAL_") && !out.contains("[INST]"), "{out}");
+        assert!(
+            !out.contains("<SPECIAL_") && !out.contains("[INST]"),
+            "{out}"
+        );
     }
 
     #[test]

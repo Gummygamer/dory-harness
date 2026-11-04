@@ -57,7 +57,9 @@ pub fn send(req: Request, cancel: &AtomicBool) -> Result<Response, SearchError> 
                 }
             }
             Err(RecvTimeoutError::Disconnected) => {
-                return Err(SearchError::Failed("the search request stopped unexpectedly".into()));
+                return Err(SearchError::Failed(
+                    "the search request stopped unexpectedly".into(),
+                ));
             }
         }
     }
@@ -83,9 +85,10 @@ fn perform(req: &Request) -> Result<Response, SearchError> {
         }
         // A status error still carries a reply, which the provider may need to read.
         Err(ureq::Error::Status(status, response)) => read_capped(response, status, req.max_bytes),
-        Err(ureq::Error::Transport(transport)) => {
-            Err(SearchError::Failed(format!("could not reach the search service ({:?})", transport.kind())))
-        }
+        Err(ureq::Error::Transport(transport)) => Err(SearchError::Failed(format!(
+            "could not reach the search service ({:?})",
+            transport.kind()
+        ))),
     }
 }
 
@@ -95,10 +98,15 @@ fn read_capped(response: ureq::Response, status: u16, max: usize) -> Result<Resp
     let mut body = Vec::new();
     let mut reader = response.into_reader().take(max as u64 + 1);
     if let Err(e) = reader.read_to_end(&mut body) {
-        return Err(SearchError::Failed(format!("the search reply could not be read ({:?})", e.kind())));
+        return Err(SearchError::Failed(format!(
+            "the search reply could not be read ({:?})",
+            e.kind()
+        )));
     }
     if body.len() > max {
-        return Err(SearchError::Failed(format!("the search reply is larger than {max} bytes")));
+        return Err(SearchError::Failed(format!(
+            "the search reply is larger than {max} bytes"
+        )));
     }
     Ok(Response { status, body })
 }

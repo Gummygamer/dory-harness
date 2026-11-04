@@ -3,12 +3,8 @@
 
 use std::fs;
 
-use dory_agent::{
-    Registry, ToolCtx,
-    tool::ToolOutcome,
-    workspace::Workspace,
-};
 use dory_agent::builtin::read;
+use dory_agent::{Registry, ToolCtx, tool::ToolOutcome, workspace::Workspace};
 use serde_json::{Map, Value, json};
 
 struct Fixture {
@@ -22,8 +18,16 @@ fn fixture() -> Fixture {
     fs::create_dir_all(root.join("src/deep")).unwrap();
     fs::create_dir_all(root.join("target")).unwrap();
     fs::write(root.join(".gitignore"), "target/\n*.log\n").unwrap();
-    fs::write(root.join("src/lib.rs"), "fn alpha() {}\nfn beta() {}\nlet needle = 1;\n").unwrap();
-    fs::write(root.join("src/deep/mod.rs"), "pub fn gamma() { /* needle */ }\n").unwrap();
+    fs::write(
+        root.join("src/lib.rs"),
+        "fn alpha() {}\nfn beta() {}\nlet needle = 1;\n",
+    )
+    .unwrap();
+    fs::write(
+        root.join("src/deep/mod.rs"),
+        "pub fn gamma() { /* needle */ }\n",
+    )
+    .unwrap();
     fs::write(root.join("target/build.rs"), "needle in ignored output\n").unwrap();
     fs::write(root.join("debug.log"), "needle in an ignored log\n").unwrap();
     fs::write(root.join("empty.txt"), "").unwrap();
@@ -53,8 +57,16 @@ fn list_dir_respects_gitignore_and_marks_folders() {
     let out = call(&f, "list_dir", json!({"path": ""}));
     assert!(!out.is_error, "{}", out.text);
     assert!(out.text.contains("src/"), "{}", out.text);
-    assert!(!out.text.contains("target"), "ignored folder listed: {}", out.text);
-    assert!(!out.text.contains("debug.log"), "ignored file listed: {}", out.text);
+    assert!(
+        !out.text.contains("target"),
+        "ignored folder listed: {}",
+        out.text
+    );
+    assert!(
+        !out.text.contains("debug.log"),
+        "ignored file listed: {}",
+        out.text
+    );
 }
 
 #[test]
@@ -85,9 +97,22 @@ fn read_file_numbers_lines_and_reports_the_total() {
 #[test]
 fn read_file_pages_with_start_line_and_says_where_to_go_next() {
     let f = fixture();
-    let first = call(&f, "read_file", json!({"path": "many.txt", "max_lines": 400})).text;
-    assert!(first.contains("[showing lines 1-400 of 1000. Read the rest with start_line=401.]"), "{first}");
-    let second = call(&f, "read_file", json!({"path": "many.txt", "start_line": 401, "max_lines": 400})).text;
+    let first = call(
+        &f,
+        "read_file",
+        json!({"path": "many.txt", "max_lines": 400}),
+    )
+    .text;
+    assert!(
+        first.contains("[showing lines 1-400 of 1000. Read the rest with start_line=401.]"),
+        "{first}"
+    );
+    let second = call(
+        &f,
+        "read_file",
+        json!({"path": "many.txt", "start_line": 401, "max_lines": 400}),
+    )
+    .text;
     assert!(second.contains("   401\tline 401"), "{second}");
 }
 
@@ -104,7 +129,11 @@ fn read_file_refuses_binary_with_its_type_and_size() {
     let f = fixture();
     let out = call(&f, "read_file", json!({"path": "image.bin"}));
     assert!(out.is_error);
-    assert!(out.text.contains("PNG image") && out.text.contains("binary"), "{}", out.text);
+    assert!(
+        out.text.contains("PNG image") && out.text.contains("binary"),
+        "{}",
+        out.text
+    );
 }
 
 #[test]
@@ -127,35 +156,58 @@ fn read_file_clips_very_long_lines() {
 #[test]
 fn read_file_shows_an_empty_file() {
     let f = fixture();
-    assert_eq!(call(&f, "read_file", json!({"path": "empty.txt"})).text, "[empty file]");
+    assert_eq!(
+        call(&f, "read_file", json!({"path": "empty.txt"})).text,
+        "[empty file]"
+    );
 }
 
 #[test]
 fn read_file_reports_a_start_past_the_end() {
     let f = fixture();
-    let out = call(&f, "read_file", json!({"path": "src/lib.rs", "start_line": 99}));
-    assert!(out.is_error && out.text.contains("past the end"), "{}", out.text);
+    let out = call(
+        &f,
+        "read_file",
+        json!({"path": "src/lib.rs", "start_line": 99}),
+    );
+    assert!(
+        out.is_error && out.text.contains("past the end"),
+        "{}",
+        out.text
+    );
 }
 
 #[test]
 fn unknown_arguments_are_named_in_the_error() {
     let f = fixture();
     let out = call(&f, "read_file", json!({"path": "src/lib.rs", "line": 3}));
-    assert!(out.is_error && out.text.contains("has no argument 'line'"), "{}", out.text);
+    assert!(
+        out.is_error && out.text.contains("has no argument 'line'"),
+        "{}",
+        out.text
+    );
 }
 
 #[test]
 fn a_missing_required_argument_is_named() {
     let f = fixture();
     let out = call(&f, "read_file", json!({}));
-    assert!(out.is_error && out.text.contains("missing required argument 'path'"), "{}", out.text);
+    assert!(
+        out.is_error && out.text.contains("missing required argument 'path'"),
+        "{}",
+        out.text
+    );
 }
 
 #[test]
 fn search_finds_matches_and_skips_ignored_and_binary_files() {
     let f = fixture();
     let out = call(&f, "search_files", json!({"pattern": "needle"}));
-    assert!(out.text.contains("src/lib.rs:3:let needle = 1;"), "{}", out.text);
+    assert!(
+        out.text.contains("src/lib.rs:3:let needle = 1;"),
+        "{}",
+        out.text
+    );
     assert!(out.text.contains("src/deep/mod.rs:1:"), "{}", out.text);
     assert!(!out.text.contains("target"), "{}", out.text);
     assert!(!out.text.contains("debug.log"), "{}", out.text);
@@ -173,15 +225,28 @@ fn search_never_shows_lines_from_secret_files() {
 #[test]
 fn search_glob_and_no_match() {
     let f = fixture();
-    let out = call(&f, "search_files", json!({"pattern": "fn ", "glob": "*.rs"})).text;
+    let out = call(
+        &f,
+        "search_files",
+        json!({"pattern": "fn ", "glob": "*.rs"}),
+    )
+    .text;
     assert!(out.contains("src/lib.rs:1:fn alpha"), "{out}");
-    assert_eq!(call(&f, "search_files", json!({"pattern": "zzz_absent"})).text, "no matches");
+    assert_eq!(
+        call(&f, "search_files", json!({"pattern": "zzz_absent"})).text,
+        "no matches"
+    );
 }
 
 #[test]
 fn search_caps_the_number_of_results() {
     let f = fixture();
-    let out = call(&f, "search_files", json!({"pattern": "line", "max_results": 5})).text;
+    let out = call(
+        &f,
+        "search_files",
+        json!({"pattern": "line", "max_results": 5}),
+    )
+    .text;
     assert_eq!(out.lines().filter(|l| l.contains(":")).count(), 5, "{out}");
     assert!(out.contains("more matches not shown"), "{out}");
 }
@@ -190,5 +255,9 @@ fn search_caps_the_number_of_results() {
 fn search_rejects_a_bad_regex() {
     let f = fixture();
     let out = call(&f, "search_files", json!({"pattern": "("}));
-    assert!(out.is_error && out.text.contains("invalid regular expression"), "{}", out.text);
+    assert!(
+        out.is_error && out.text.contains("invalid regular expression"),
+        "{}",
+        out.text
+    );
 }

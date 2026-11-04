@@ -16,7 +16,10 @@ pub fn state_path(workspace_root: &Path) -> PathBuf {
 
 /// Records that the quota was found used up now.
 pub fn record_quota_used_up(path: &Path, now: SystemTime) -> io::Result<()> {
-    let secs = now.duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
+    let secs = now
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
     if let Some(dir) = path.parent() {
         fs::create_dir_all(dir)?;
     }
@@ -44,7 +47,11 @@ pub fn format_utc(secs: i64) -> String {
     let days = secs.div_euclid(86_400);
     let rem = secs.rem_euclid(86_400);
     let (y, m, d) = civil_from_days(days);
-    format!("{y:04}-{m:02}-{d:02} {:02}:{:02} UTC", rem / 3600, (rem % 3600) / 60)
+    format!(
+        "{y:04}-{m:02}-{d:02} {:02}:{:02} UTC",
+        rem / 3600,
+        (rem % 3600) / 60
+    )
 }
 
 /// Days since 1970-01-01 to a proleptic Gregorian (year, month, day). Howard Hinnant's algorithm.
@@ -69,7 +76,11 @@ mod tests {
     fn dates_are_formatted_in_utc() {
         assert_eq!(format_utc(0), "1970-01-01 00:00 UTC");
         assert_eq!(format_utc(1_704_067_200), "2024-01-01 00:00 UTC");
-        assert_eq!(format_utc(1_709_251_199), "2024-02-29 23:59 UTC", "2024 is a leap year");
+        assert_eq!(
+            format_utc(1_709_251_199),
+            "2024-02-29 23:59 UTC",
+            "2024 is a leap year"
+        );
         assert_eq!(format_utc(1_793_714_232), "2026-11-03 13:57 UTC");
     }
 
@@ -78,10 +89,20 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = state_path(dir.path());
         assert_eq!(quota_used_up_at(&path), None);
-        record_quota_used_up(&path, UNIX_EPOCH + std::time::Duration::from_secs(1_704_067_200)).unwrap();
-        assert_eq!(quota_used_up_at(&path).as_deref(), Some("2024-01-01 00:00 UTC"));
+        record_quota_used_up(
+            &path,
+            UNIX_EPOCH + std::time::Duration::from_secs(1_704_067_200),
+        )
+        .unwrap();
+        assert_eq!(
+            quota_used_up_at(&path).as_deref(),
+            Some("2024-01-01 00:00 UTC")
+        );
         let text = fs::read_to_string(&path).unwrap();
-        assert!(!text.contains("key"), "the state file must hold no key: {text}");
+        assert!(
+            !text.contains("key"),
+            "the state file must hold no key: {text}"
+        );
         clear(&path).unwrap();
         assert_eq!(quota_used_up_at(&path), None);
         clear(&path).unwrap();

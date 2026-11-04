@@ -15,20 +15,30 @@ fn main() {
         Ok(p) => PathBuf::from(p),
         Err(_) => manifest.join("../../../llama.cpp-dory"),
     };
-    let fork = fork
-        .canonicalize()
-        .unwrap_or_else(|e| panic!("llama.cpp fork not found at {}: {e} (set DORY_LLAMA_DIR)", fork.display()));
+    let fork = fork.canonicalize().unwrap_or_else(|e| {
+        panic!(
+            "llama.cpp fork not found at {}: {e} (set DORY_LLAMA_DIR)",
+            fork.display()
+        )
+    });
 
     let lib_dir = fork.join("build/bin");
     let lib = lib_dir.join("libllama.so");
-    assert!(lib.exists(), "{} missing: build the fork first", lib.display());
+    assert!(
+        lib.exists(),
+        "{} missing: build the fork first",
+        lib.display()
+    );
 
     println!("cargo:rustc-link-search=native={}", lib_dir.display());
     println!("cargo:rustc-link-lib=dylib=llama");
     // Only this crate's own targets get the rpath from rustc-link-arg, so the library directory
     // is also exported for dependents (DEP_LLAMA_LIB_DIR), which add the rpath themselves.
     println!("cargo:lib_dir={}", lib_dir.display());
-    println!("cargo:rerun-if-changed={}", fork.join("include/llama.h").display());
+    println!(
+        "cargo:rerun-if-changed={}",
+        fork.join("include/llama.h").display()
+    );
 
     // Stamp the commit the library was built from; the engine compares it with the pin.
     let head = Command::new("git")

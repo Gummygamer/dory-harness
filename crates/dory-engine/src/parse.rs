@@ -20,7 +20,10 @@ const PARAM_END: &str = "</parameter>";
 pub enum Piece {
     Reasoning(String),
     Content(String),
-    ToolCall { name: String, arguments: Map<String, Value> },
+    ToolCall {
+        name: String,
+        arguments: Map<String, Value>,
+    },
     /// A tool call that never closed or could not be parsed. Carries the raw text.
     MalformedToolCall(String),
 }
@@ -43,7 +46,11 @@ impl StreamParser {
     /// `thinking` must match the `enable_thinking` value used to render the prompt.
     pub fn new(thinking: bool, schemas: HashMap<String, Value>) -> Self {
         StreamParser {
-            state: if thinking { State::Reasoning } else { State::Content },
+            state: if thinking {
+                State::Reasoning
+            } else {
+                State::Content
+            },
             buf: String::new(),
             schemas,
         }
@@ -141,7 +148,10 @@ impl StreamParser {
             let gt = after.find('>')?;
             let key = after[..gt].trim().to_string();
             let (value, next) = split_value(&after[gt + 1..])?;
-            arguments.insert(key.clone(), typed_value(strip_one_newline(value), param_type(schema, &key)));
+            arguments.insert(
+                key.clone(),
+                typed_value(strip_one_newline(value), param_type(schema, &key)),
+            );
             s = next;
         }
     }
@@ -199,11 +209,7 @@ fn strip_one_newline(s: &str) -> &str {
 }
 
 fn param_type<'a>(schema: Option<&'a Value>, key: &str) -> Option<&'a str> {
-    schema?
-        .get("properties")?
-        .get(key)?
-        .get("type")?
-        .as_str()
+    schema?.get("properties")?.get(key)?.get("type")?.as_str()
 }
 
 /// Converts a raw parameter string to the JSON type the schema asks for. Anything that does
@@ -211,7 +217,11 @@ fn param_type<'a>(schema: Option<&'a Value>, key: &str) -> Option<&'a str> {
 fn typed_value(raw: &str, ty: Option<&str>) -> Value {
     let as_string = || Value::String(raw.to_string());
     match ty {
-        Some("integer") => raw.trim().parse::<i64>().map(Value::from).unwrap_or_else(|_| as_string()),
+        Some("integer") => raw
+            .trim()
+            .parse::<i64>()
+            .map(Value::from)
+            .unwrap_or_else(|_| as_string()),
         Some("number") => raw
             .trim()
             .parse::<f64>()
@@ -224,7 +234,9 @@ fn typed_value(raw: &str, ty: Option<&str>) -> Value {
             "false" | "False" => Value::Bool(false),
             _ => as_string(),
         },
-        Some("object") | Some("array") => serde_json::from_str(raw.trim()).unwrap_or_else(|_| as_string()),
+        Some("object") | Some("array") => {
+            serde_json::from_str(raw.trim()).unwrap_or_else(|_| as_string())
+        }
         Some("null") => Value::Null,
         _ => as_string(),
     }
@@ -274,7 +286,10 @@ mod tests {
     #[test]
     fn reasoning_then_content_when_thinking() {
         let mut p = StreamParser::new(true, HashMap::new());
-        let out = feed(&mut p, &["Let me think", "</think>", "\n\nLisbon is sunny."]);
+        let out = feed(
+            &mut p,
+            &["Let me think", "</think>", "\n\nLisbon is sunny."],
+        );
         assert_eq!(join(&out, reasoning), "Let me think");
         assert_eq!(join(&out, content), "\n\nLisbon is sunny.");
     }
@@ -316,9 +331,17 @@ mod tests {
         let mut p = StreamParser::new(false, weather_schemas());
         let out = feed(
             &mut p,
-            &["<tool", "_call>\n<function=get_weather>\n<parameter=city>\nLis", "bon\n</parameter>\n</function>", "\n</tool_call>"],
+            &[
+                "<tool",
+                "_call>\n<function=get_weather>\n<parameter=city>\nLis",
+                "bon\n</parameter>\n</function>",
+                "\n</tool_call>",
+            ],
         );
-        let calls: Vec<_> = out.iter().filter(|p| matches!(p, Piece::ToolCall { .. })).collect();
+        let calls: Vec<_> = out
+            .iter()
+            .filter(|p| matches!(p, Piece::ToolCall { .. }))
+            .collect();
         assert_eq!(calls.len(), 1);
         if let Piece::ToolCall { arguments, .. } = calls[0] {
             assert_eq!(arguments["city"], json!("Lisbon"));
@@ -328,7 +351,10 @@ mod tests {
     #[test]
     fn cut_off_tool_call_is_reported_not_dropped() {
         let mut p = StreamParser::new(false, weather_schemas());
-        let out = feed(&mut p, &["<tool_call>\n<function=get_weather>\n<parameter=city>\nLis"]);
+        let out = feed(
+            &mut p,
+            &["<tool_call>\n<function=get_weather>\n<parameter=city>\nLis"],
+        );
         assert!(matches!(out.last(), Some(Piece::MalformedToolCall(_))));
     }
 
@@ -346,9 +372,19 @@ mod tests {
     /// The exact text the chat renderer emits for one tool call (as the model would produce it).
     fn rendered_call(name: &str, args: &[(&str, &str)]) -> String {
         use crate::chat::{self, Message, ToolCall};
-        let arguments = args.iter().map(|(k, v)| (k.to_string(), Value::String(v.to_string()))).collect();
-        let call = ToolCall { name: name.into(), arguments };
-        let assistant = Message { role: "assistant".into(), tool_calls: vec![call], ..Default::default() };
+        let arguments = args
+            .iter()
+            .map(|(k, v)| (k.to_string(), Value::String(v.to_string())))
+            .collect();
+        let call = ToolCall {
+            name: name.into(),
+            arguments,
+        };
+        let assistant = Message {
+            role: "assistant".into(),
+            tool_calls: vec![call],
+            ..Default::default()
+        };
         let prompt = chat::render(&[Message::new("user", "go"), assistant], &[], false).unwrap();
         let start = prompt.find("<tool_call>").unwrap();
         let end = prompt.find("</tool_call>\n").unwrap() + "</tool_call>\n".len();
@@ -356,8 +392,14 @@ mod tests {
     }
 
     fn string_schema(keys: &[&str]) -> HashMap<String, Value> {
-        let props: Map<String, Value> = keys.iter().map(|k| (k.to_string(), json!({"type": "string"}))).collect();
-        HashMap::from([("edit".to_string(), json!({"type": "object", "properties": props}))])
+        let props: Map<String, Value> = keys
+            .iter()
+            .map(|k| (k.to_string(), json!({"type": "string"})))
+            .collect();
+        HashMap::from([(
+            "edit".to_string(),
+            json!({"type": "object", "properties": props}),
+        )])
     }
 
     /// Parses `text` as the model's output with thinking off; returns the single tool call's arguments.
@@ -386,14 +428,22 @@ mod tests {
         ];
         for v in values {
             let text = rendered_call("edit", &[("content", v)]);
-            let args = parse_one(&text, &["content"]).unwrap_or_else(|| panic!("no call parsed from {text:?}"));
+            let args = parse_one(&text, &["content"])
+                .unwrap_or_else(|| panic!("no call parsed from {text:?}"));
             assert_eq!(args["content"], json!(v), "round trip failed for {v:?}");
         }
     }
 
     #[test]
     fn several_parameters_round_trip_in_order() {
-        let text = rendered_call("edit", &[("path", "src/x.rs"), ("content", "a\n</parameter>\nb"), ("note", "")]);
+        let text = rendered_call(
+            "edit",
+            &[
+                ("path", "src/x.rs"),
+                ("content", "a\n</parameter>\nb"),
+                ("note", ""),
+            ],
+        );
         let args = parse_one(&text, &["path", "content", "note"]).unwrap();
         assert_eq!(args["path"], json!("src/x.rs"));
         assert_eq!(args["content"], json!("a\n</parameter>\nb"));
@@ -405,7 +455,10 @@ mod tests {
         let source = include_str!("parse.rs");
         let text = rendered_call("edit", &[("content", source)]);
         let args = parse_one(&text, &["content"]).expect("call parses");
-        assert!(args["content"] == json!(source), "parse.rs changed in transit");
+        assert!(
+            args["content"] == json!(source),
+            "parse.rs changed in transit"
+        );
     }
 
     #[test]
@@ -425,7 +478,9 @@ mod tests {
         let mut pieces = p.push(text);
         pieces.extend(p.finish());
         match pieces.last() {
-            Some(Piece::MalformedToolCall(raw)) => assert!(raw.contains("And then some text"), "{raw}"),
+            Some(Piece::MalformedToolCall(raw)) => {
+                assert!(raw.contains("And then some text"), "{raw}")
+            }
             other => panic!("expected a malformed call, got {other:?}"),
         }
     }

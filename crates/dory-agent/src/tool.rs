@@ -37,19 +37,33 @@ pub struct ToolOutcome {
 
 impl ToolOutcome {
     pub fn ok(text: impl Into<String>) -> Self {
-        ToolOutcome { text: text.into(), is_error: false, truncated: false }
+        ToolOutcome {
+            text: text.into(),
+            is_error: false,
+            truncated: false,
+        }
     }
 
     pub fn err(text: impl Into<String>) -> Self {
         let text = text.into();
-        let text = if text.starts_with("error:") { text } else { format!("error: {text}") };
-        ToolOutcome { text, is_error: true, truncated: false }
+        let text = if text.starts_with("error:") {
+            text
+        } else {
+            format!("error: {text}")
+        };
+        ToolOutcome {
+            text,
+            is_error: true,
+            truncated: false,
+        }
     }
 }
 
 /// What tools may see of the session.
 pub struct ToolCtx {
     pub workspace: Workspace,
+    /// Effective command sandbox state shown in approval previews.
+    pub command_sandbox: Option<String>,
     /// Files read or written this session, by hash. Edits and overwrites check against it.
     pub files: RefCell<FileLog>,
     /// Where full output of long commands is kept, so the model can read it back. Set by sessions.
@@ -67,7 +81,14 @@ impl ToolCtx {
 
     /// A context that shares `cancel` with the agent, so one flag stops both.
     pub fn with_cancel(workspace: Workspace, cancel: Arc<AtomicBool>) -> Self {
-        ToolCtx { workspace, files: RefCell::new(FileLog::default()), scratch: None, cancel, web_searches: Cell::new(0) }
+        ToolCtx {
+            workspace,
+            command_sandbox: None,
+            files: RefCell::new(FileLog::default()),
+            scratch: None,
+            cancel,
+            web_searches: Cell::new(0),
+        }
     }
 }
 
@@ -119,12 +140,18 @@ pub struct Registry {
 
 impl Registry {
     pub fn new(ctx: ToolCtx) -> Self {
-        Registry { tools: Vec::new(), ctx }
+        Registry {
+            tools: Vec::new(),
+            ctx,
+        }
     }
 
     pub fn add(&mut self, tool: Box<dyn Tool>) -> Result<()> {
         if self.tools.iter().any(|t| t.name() == tool.name()) {
-            return Err(Error::Tool(format!("tool '{}' is registered twice", tool.name())));
+            return Err(Error::Tool(format!(
+                "tool '{}' is registered twice",
+                tool.name()
+            )));
         }
         self.tools.push(tool);
         Ok(())
@@ -139,16 +166,28 @@ impl Registry {
     }
 
     pub fn schemas(&self) -> HashMap<String, Value> {
-        self.tools.iter().map(|t| (t.name().to_string(), t.def().parameters)).collect()
+        self.tools
+            .iter()
+            .map(|t| (t.name().to_string(), t.def().parameters))
+            .collect()
     }
 
     pub fn find(&self, name: &str) -> Option<&dyn Tool> {
-        self.tools.iter().find(|t| t.name() == name).map(|t| t.as_ref())
+        self.tools
+            .iter()
+            .find(|t| t.name() == name)
+            .map(|t| t.as_ref())
     }
 
     /// Finds the tool and checks its required arguments. Failures are results the model can read.
-    pub fn prepare(&self, name: &str, args: &Map<String, Value>) -> std::result::Result<&dyn Tool, ToolOutcome> {
-        let tool = self.find(name).ok_or_else(|| ToolOutcome::err(format!("unknown tool '{name}'")))?;
+    pub fn prepare(
+        &self,
+        name: &str,
+        args: &Map<String, Value>,
+    ) -> std::result::Result<&dyn Tool, ToolOutcome> {
+        let tool = self
+            .find(name)
+            .ok_or_else(|| ToolOutcome::err(format!("unknown tool '{name}'")))?;
         check_required(&tool.def(), args).map_err(ToolOutcome::err)?;
         Ok(tool)
     }
@@ -168,7 +207,10 @@ fn check_required(def: &ToolDef, args: &Map<String, Value>) -> std::result::Resu
     let required = def.parameters.get("required").and_then(Value::as_array);
     for key in required.into_iter().flatten().filter_map(Value::as_str) {
         if !args.contains_key(key) {
-            return Err(format!("'{}' is missing required argument '{key}'", def.name));
+            return Err(format!(
+                "'{}' is missing required argument '{key}'",
+                def.name
+            ));
         }
     }
     if let Some(props) = def.parameters.get("properties").and_then(Value::as_object) {

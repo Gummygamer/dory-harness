@@ -18,8 +18,12 @@ pub const MAX_OUTPUT_BYTES: usize = 16 * 1024;
 
 /// Parses a tool's arguments. Unknown keys are an error, so a misnamed argument is reported
 /// instead of silently ignored.
-pub fn parse_args<T: DeserializeOwned>(tool: &str, args: &Map<String, Value>) -> Result<T, ToolOutcome> {
-    serde_json::from_value(Value::Object(args.clone())).map_err(|e| ToolOutcome::err(format!("{tool}: {e}")))
+pub fn parse_args<T: DeserializeOwned>(
+    tool: &str,
+    args: &Map<String, Value>,
+) -> Result<T, ToolOutcome> {
+    serde_json::from_value(Value::Object(args.clone()))
+        .map_err(|e| ToolOutcome::err(format!("{tool}: {e}")))
 }
 
 /// Whether the first bytes of a file look binary.
@@ -39,7 +43,11 @@ pub fn binary_type(bytes: &[u8]) -> &'static str {
         (b"\x1f\x8b", "gzip archive"),
         (b"SQLite format 3", "SQLite database"),
     ];
-    KNOWN.iter().find(|(magic, _)| bytes.starts_with(magic)).map(|(_, name)| *name).unwrap_or("unknown binary data")
+    KNOWN
+        .iter()
+        .find(|(magic, _)| bytes.starts_with(magic))
+        .map(|(_, name)| *name)
+        .unwrap_or("unknown binary data")
 }
 
 /// Cuts `s` to at most `max` bytes on a character boundary.

@@ -72,7 +72,7 @@ elif case == "fix_failing_test":
 elif case == "read_only_refuses":
     need(not os.path.exists(os.path.join(ws, "out.txt")), "out.txt was created in read-only mode")
     need(any("not allowed in read-only mode" in r for r in results), "no read-only refusal was reported to the model")
-    need(any(w in content.lower() for w in ("could not", "couldn't", "cannot", "can't", "unable", "not allowed")),
+    need(any(w in content.lower() for w in ("could not", "couldn't", "cannot", "can't", "unable", "not allowed", "wasn't able", "was not able")),
          "the answer does not say the file could not be written")
 
 elif case == "web_search_answer":

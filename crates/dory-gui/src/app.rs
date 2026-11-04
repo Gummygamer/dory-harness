@@ -50,7 +50,7 @@ fn navigation_action(
     pending: Option<SessionKind>,
     busy: bool,
 ) -> NavigationAction {
-    if current == Some(target) || (current.is_none() && pending == Some(target)) {
+    if current == Some(target) || pending == Some(target) {
         NavigationAction::ShowCurrent
     } else if busy {
         NavigationAction::Block
@@ -2030,6 +2030,15 @@ mod navigation_tests {
                 );
             }
         }
+        assert_eq!(
+            navigation_action(
+                SessionKind::Chat,
+                Some(SessionKind::Agent),
+                Some(SessionKind::Chat),
+                true
+            ),
+            NavigationAction::ShowCurrent
+        );
     }
 
     #[test]

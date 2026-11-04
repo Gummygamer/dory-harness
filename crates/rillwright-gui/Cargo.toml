@@ -1,0 +1,19 @@
+[package]
+name = "rillwright-gui"
+version = "0.1.0"
+edition = "2024"
+build = "build.rs"
+
+[dependencies]
+rillwright-app = { version = "0.1.0", path = "../rillwright-app" }
+rillwright-agent = { version = "0.1.0", path = "../rillwright-agent" }
+rillwright-engine = { version = "0.1.0", path = "../rillwright-engine" }
+rillwright-sys = { version = "0.1.0", path = "../rillwright-sys" }
+eframe = { version = "0.37.0", default-features = false, features = ["accesskit", "clipboard", "default_fonts", "glow", "wayland", "x11"] }
+image = { version = "0.25.10", default-features = false, features = ["png"] }
+rfd = { version = "0.17.2", default-features = false, features = ["pollster", "xdg-portal", "wayland"] }
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+
+[dev-dependencies]
+tempfile = "3.27.0"

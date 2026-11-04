@@ -1,28 +1,28 @@
-# Dory desktop application
+# Rillwright desktop application
 
-`dory-gui` is the Linux desktop frontend for the pinned Dory model and the existing workspace agent. It loads one model at a time. Chat sessions use no workspace tools; Agent sessions are tied to the workspace shown in the window and use the same policy, built-ins, and sandbox as `dory-cli agent`.
+`rillwright-gui` is the Linux desktop frontend for the pinned Dory model and the existing workspace agent. It loads one model at a time. Chat sessions use no workspace tools; Agent sessions are tied to the workspace shown in the window and use the same policy, built-ins, and sandbox as `rillwright agent`.
 
 ## Build and launch
 
-Build the llama.cpp fork pinned in `crates/dory-engine/src/verify.rs`, then build the desktop app:
+Build the llama.cpp fork pinned in `crates/rillwright-engine/src/verify.rs`, then build the desktop app:
 
 ```sh
-export DORY_LLAMA_DIR=/path/to/llama.cpp-dory
-cargo build --release -p dory-gui
-target/release/dory-gui
+export RILLWRIGHT_LLAMA_DIR=/path/to/llama.cpp-dory  # legacy alias: DORY_LLAMA_DIR
+cargo build --release -p rillwright-gui
+target/release/rillwright-gui
 ```
 
-The app opens in Agent mode and automatically verifies and loads the selected model in the background. Model selection precedence is `--model PATH`, nonempty `DORY_MODEL`, the saved model preference, then the in-app model picker. The startup checks the model SHA-256 and fork commit before loading. Use `target/release/dory-gui --demo` to exercise the scripted interface without loading a model; its approvals and responses do not execute tools.
+The app opens in Agent mode and automatically verifies and loads the selected model in the background. Model selection precedence is `--model PATH`, nonempty `RILLWRIGHT_MODEL` (legacy alias `DORY_MODEL`), the saved model preference, then the in-app model picker. The startup checks the model SHA-256 and fork commit before loading. Use `target/release/rillwright-gui --demo` to exercise the scripted interface without loading a model; its approvals and responses do not execute tools.
 
 Launch arguments accept explicit overrides:
 
 ```sh
-target/release/dory-gui --model /path/to/Dory.gguf --workspace /path/to/project
+target/release/rillwright-gui --model /path/to/Dory.gguf --workspace /path/to/project
 ```
 
 Workspace selection precedence is `--workspace DIR`, a meaningful inherited working directory, then the last valid saved workspace; otherwise the in-app folder chooser appears. The home directory and filesystem root require an explicit project choice unless passed with `--workspace`. A project does not need to be a Git repository. Desktop launchers may not inherit shell environment variables or the shell's current project directory, so configure the model path or use the model picker and choose a workspace when needed. `--demo`, `--model`, and `--workspace` are validated; unknown or incomplete arguments show an error.
 
-For a local Linux bundle, run `scripts/package_gui.sh`. It stages the executable, launcher, and the fork's llama/ggml shared libraries under `dist/`. Keep the model external. The launcher uses the bundled fork libraries; CUDA driver/runtime libraries and the desktop portal are system requirements. This bundle is for the Linux environment used to build it, not a general-purpose cross-distro image.
+For a local Linux bundle, run `scripts/package_gui.sh`. It stages the executable, launcher, app icon, and the fork's llama/ggml shared libraries under `dist/`. The same icon is embedded in the native window and shipped as `share/icons/hicolor/512x512/apps/rillwright.png`. Keep the model external. The launcher uses the bundled fork libraries; CUDA driver/runtime libraries and the desktop portal are system requirements. This bundle is for the Linux environment used to build it, not a general-purpose cross-distro image.
 
 ## First use
 
@@ -40,7 +40,7 @@ Settings exposes **Model loops** with the supported values 1–4 and a default o
 
 You can open Settings or Diagnostics during a turn and return to the same Agent conversation while it is running, waiting for approval, applying settings, or initializing. The transcript, draft, workspace, and approval remain attached to that conversation. Switching to a different Chat or Agent conversation and starting a new conversation can remain unavailable while work is pending.
 
-Plain chat data is stored below `${XDG_DATA_HOME:-~/.local/share}/dory-harness-chat`. Agent transcripts stay in `<workspace>/.dory/sessions/`. Settings are stored below `${XDG_CONFIG_HOME:-~/.config}/dory-harness/settings.json`.
+Plain chat uses the legacy `${XDG_DATA_HOME:-~/.local/share}/dory-harness-chat` directory when it exists, otherwise `${XDG_DATA_HOME:-~/.local/share}/rillwright-chat`. If both exist, the app reports the conflict and keeps using the legacy root; close the app before manually consolidating histories. Unreadable storage is reported as an error. Agent transcripts stay in `<workspace>/.dory/sessions/`. Settings prefer `${XDG_CONFIG_HOME:-~/.config}/rillwright/settings.json`, migrate valid legacy settings from `dory-harness/settings.json`, and preserve the original.
 
 ## Permissions and web search
 
@@ -50,7 +50,7 @@ Web search is disabled by default. Enable it in Settings and choose Tavily or Br
 
 ## Troubleshooting
 
-- **Fork or checksum mismatch:** verify `DORY_LLAMA_DIR` points at the pinned fork and the selected model is the pinned file. Diagnostics shows the expected and built fork identifiers.
+- **Fork or checksum mismatch:** verify `RILLWRIGHT_LLAMA_DIR` points at the pinned fork and the selected model is the pinned file. Diagnostics shows the expected and built fork identifiers.
 - **Shared library error before a window appears:** build against the matching fork, or use the generated launcher and check that system CUDA libraries are installed. Native loader failures occur before the application can display an error panel.
 - **Sandbox unavailable:** install `bubblewrap` (`bwrap`) on Linux, or select the intended sandbox mode in Settings. The effective state is shown for Agent sessions.
 - **File picker unavailable:** install a working desktop portal and file chooser service for the current Wayland/X11 session.
@@ -63,4 +63,4 @@ Linux is the supported target. Windows and macOS need separate native-library an
 
 ## Verification record
 
-For the loop/navigation changes, `cargo fmt --all --check`, `cargo test -p dory-gui -p dory-app` (19 tests), `cargo test -p dory-engine --test loops` (3 tests), and `cargo check -p dory-gui -p dory-app` passed with the pinned fork's `build/bin` on `LD_LIBRARY_PATH`. `dory-gui --demo` launched without a startup error and was stopped after eight seconds; visual checks at minimum/default sizes and keyboard interaction were not performed. A real-model reload and live streaming/approval navigation check were not performed, so native loop application and those desktop interactions remain unverified.
+For the loop/navigation changes, `cargo fmt --all --check`, `cargo test -p rillwright-gui -p rillwright-app` (19 tests), `cargo test -p rillwright-engine --test loops` (3 tests), and `cargo check -p rillwright-gui -p rillwright-app` passed with the pinned fork's `build/bin` on `LD_LIBRARY_PATH`. `rillwright-gui --demo` launched without a startup error and was stopped after eight seconds; visual checks at minimum/default sizes and keyboard interaction were not performed. A real-model reload and live streaming/approval navigation check were not performed, so native loop application and those desktop interactions remain unverified.

@@ -1,5 +1,5 @@
 // SCRATCH: earliest graph node whose per-token values change when later tokens join the batch.
-use dory_sys::*;
+use rillwright_sys::*;
 use std::{ffi::{CStr, CString, c_char, c_void}};
 #[link(name = "ggml-base")]
 unsafe extern "C" {

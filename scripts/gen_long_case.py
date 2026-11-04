@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""Writes a long-context needle case for `dory-cli raw`.
+"""Writes a long-context needle case for `rillwright raw`.
 
 A document of numbered ledger lines (filler) holds one needle line in the middle. The final user
 message asks for the needle's code, so a correct answer needs the whole prompt to be attended to.
 `raw` reports prompt_tokens, which shows the real size.
 
   python3 -I scripts/gen_long_case.py --lines 1750 --out CASE.json
-  dory-cli --ctx 65536 raw CASE.json --max-tokens 64 --temp 0
+  rillwright --ctx 65536 raw CASE.json --max-tokens 64 --temp 0
 
 About 35 tokens per filler line. Thinking is off unless --think is given.
 """

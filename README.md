@@ -1,46 +1,48 @@
-# dory-harness
+# rillwright
 
-Rust harness for NVIDIA Nemotron Dory 1.0 4B, running on the llama.cpp fork at PR #30306
+A local coding agent and desktop workspace, built in Rust.
+
+Currently supports NVIDIA Nemotron Labs Dory 1.0 4B through a pinned llama.cpp fork.
 (https://github.com/ggml-org/llama.cpp/pull/30306, head commit `1c3cdd2`, fork at
-https://github.com/brianchmielNV/llama.cpp). Build the fork first, then point `DORY_LLAMA_DIR` at it
-(the default is `../../../llama.cpp-dory` relative to `crates/dory-sys`).
+https://github.com/brianchmielNV/llama.cpp). Build the fork first, then point `RILLWRIGHT_LLAMA_DIR` at it
+(the default is `../../../llama.cpp-dory` relative to `crates/rillwright-sys`).
 The plans are in `docs/`: `RUST_HARNESS_PLAN.md`, `RUST_HARNESS_FIX_PLAN.md` and `AGENT_TOOLS_PLAN.md`.
 
 ## Crates
 
-- `dory-sys`: bindgen bindings to `include/llama.h`, linked to the fork's `libllama.so`.
-- `dory-engine`: checksum and commit pins, RAII model/context, worker-thread engine, prefill schedule,
+- `rillwright-sys`: bindgen bindings to `include/llama.h`, linked to the fork's `libllama.so`.
+- `rillwright-engine`: checksum and commit pins, RAII model/context, worker-thread engine, prefill schedule,
   chat renderer, streaming parser, tool allowlist, token logprobs.
-- `dory-agent`: the agent loop, built-in file and command tools, permissions, the `bwrap` sandbox, compaction
+- `rillwright-agent`: the agent loop, built-in file and command tools, permissions, the `bwrap` sandbox, compaction
   and session transcripts. It never prints; front ends render its events.
-- `dory-cli`: `dory info | template | run | chat | raw | bench | agent`. `raw --chat-turn` uses the chat endpoint's
+- `rillwright`: `rillwright info | template | run | chat | raw | bench | agent`. `raw --chat-turn` uses the chat endpoint's
   prefill breaks.
-- `dory-app` / `dory-gui`: shared typed desktop configuration, worker controller, and Linux GUI for plain chat
+- `rillwright-app` / `rillwright-gui`: shared typed desktop configuration, worker controller, and Linux GUI for plain chat
   and workspace-agent sessions. See [docs/GUI.md](docs/GUI.md).
-- `dory-serve`: optional OpenAI-style `/v1/chat/completions` (streaming, tool calls returned to the
+- `rillwright-serve`: optional OpenAI-style `/v1/chat/completions` (streaming, tool calls returned to the
   client, one generation at a time). Binds to loopback unless `--allow-remote` is given.
 
 ## Build and run
 
-    cargo build --release -p dory-cli -p dory-serve -p dory-gui
-    target/release/dory-cli info
-    target/release/dory-cli run "What is the capital of Portugal? Answer in one word."
-    target/release/dory-cli --tools examples/tools.json chat
-    target/release/dory-serve --ctx 4096 --port 8080
-    cd /path/to/project && DORY_MODEL=/path/to/NVIDIA-Nemotron-Labs-Dory1.0-4B-Q5_K_M.gguf /path/to/dory-harness/target/release/dory-gui
-    target/release/dory-gui --model /path/to/Dory.gguf --workspace /path/to/project
-    target/release/dory-gui --demo
+    cargo build --release -p rillwright-cli -p rillwright-serve -p rillwright-gui
+    target/release/rillwright info
+    target/release/rillwright run "What is the capital of Portugal? Answer in one word."
+    target/release/rillwright --tools examples/tools.json chat
+    target/release/rillwright-serve --ctx 4096 --port 8080
+    cd /path/to/project && RILLWRIGHT_MODEL=/path/to/NVIDIA-Nemotron-Labs-Dory1.0-4B-Q5_K_M.gguf /path/to/rillwright/target/release/rillwright-gui
+    target/release/rillwright-gui --model /path/to/Dory.gguf --workspace /path/to/project
+    target/release/rillwright-gui --demo
 
-Create a local Linux bundle with `DORY_LLAMA_DIR=/path/to/llama.cpp-dory scripts/package_gui.sh`.
+Create a local Linux bundle with `RILLWRIGHT_LLAMA_DIR=/path/to/llama.cpp-dory scripts/package_gui.sh`.
 
-Versions bump themselves: `dory-cli --version` and `dory-serve --version` (also `dory-cli info`) print
+Versions bump themselves: `rillwright --version` and `rillwright-serve --version` (also `rillwright info`) print
 `MAJOR.MINOR.COMMITS+HASH`, e.g. `0.1.19+d70498f`. MAJOR.MINOR come from the crate version in `Cargo.toml`
 (change them by hand for a release); COMMITS is the commit count on HEAD, so every commit raises it with no
 file edits. A `.dirty` suffix means uncommitted changes to tracked files. Without git it falls back to the
 `Cargo.toml` version plus `+nogit`. The logic is in `build_version.rs`.
 
-Both binaries read the model from `--model` or the `DORY_MODEL` environment variable, so set
-`DORY_MODEL=/path/to/NVIDIA-Nemotron-Labs-Dory1.0-4B-Q5_K_M.gguf` once. The GPU tests and
+Both binaries read the model from `--model` or the `RILLWRIGHT_MODEL` environment variable, so set
+`RILLWRIGHT_MODEL=/path/to/NVIDIA-Nemotron-Labs-Dory1.0-4B-Q5_K_M.gguf` once. The GPU tests and
 `scripts/loop_matrix.sh` (which also needs `LLAMA_SERVER`) use the same variables.
 
 Defaults: 2 loops, `last_loop`, 32K context, batch 2048, ubatch 512, all layers on GPU,
@@ -101,15 +103,15 @@ Earlier: a 25,954-token prompt answered correctly, and a 74,054-token prompt was
 
 ## Agent
 
-`dory-cli agent` lets the model read and change files and run commands in a project folder. Reads
+`rillwright agent` lets the model read and change files and run commands in a project folder. Reads
 inside the folder are automatic. Writes and commands ask first, unless a permission mode or an
 `--allow-command` rule allows them.
 
-    target/release/dory-cli agent "What does src/parser.rs do?" --workspace .
-    target/release/dory-cli agent "Fix the failing test" --workspace ../app --permission auto-edit \
+    target/release/rillwright agent "What does src/parser.rs do?" --workspace .
+    target/release/rillwright agent "Fix the failing test" --workspace ../app --permission auto-edit \
         --allow-command "python3 -m unittest"
-    target/release/dory-cli agent --workspace ../app          # interactive session
-    target/release/dory-cli agent --resume SESSION_ID --workspace ../app
+    target/release/rillwright agent --workspace ../app          # interactive session
+    target/release/rillwright agent --resume SESSION_ID --workspace ../app
 
 Permission modes:
 
@@ -163,11 +165,17 @@ Exit codes: `0` answered, `1` runtime error or the model could not finish (malfo
 answers, repeated calls, a length cut that could not be kept), `3` a limit was reached (rounds, time
 or context), `4` cancelled.
 
-`dory-serve` never runs tools. It returns calls to the client and supports `tool_choice` `auto` and
+`rillwright-serve` never runs tools. It returns calls to the client and supports `tool_choice` `auto` and
 `none` (`required` and named choices return 400, since nothing can force a call).
 
 Checks: `scripts/agent_acceptance.sh` runs eight end-to-end cases on fixture projects and checks the
 files and JSON events they produce. Last result: 8 of 8 on the final run (one earlier run had one
 stalled case, `fix_failing_test`, which passed on re-run; the cause of the stall is not known).
-`scripts/serve_openai_check.py` checks `dory-serve` with the `openai` Python package, which needs
+`scripts/serve_openai_check.py` checks `rillwright-serve` with the `openai` Python package, which needs
 a venv under `target/`.
+
+## Rename compatibility
+
+Rillwright was renamed from `dory-harness`. The CLI is now `rillwright`, GUI `rillwright-gui`, and server `rillwright-serve`; the GUI bundle includes a `dory-gui` forwarding launcher. `RILLWRIGHT_MODEL`, `RILLWRIGHT_LLAMA_DIR`, and `RILLWRIGHT_WEB_BASE_URL` are canonical; the corresponding `DORY_*` values remain aliases. Settings migrate from the old config directory. Existing plain chat continues in `dory-harness-chat` when present; fresh installs use `rillwright-chat`. Workspace agent sessions remain under `.dory/`.
+
+Existing CLI/server installations can add opt-in aliases with `ln -s rillwright ~/.local/bin/dory-cli` and `ln -s rillwright-serve ~/.local/bin/dory-serve`; the rename never overwrites installed commands.

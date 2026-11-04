@@ -1,0 +1,19 @@
+[package]
+name = "rillwright-agent"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+rillwright-engine = { version = "0.1.0", path = "../rillwright-engine" }
+rillwright-sys = { version = "0.1.0", path = "../rillwright-sys" }
+globset = "0.4.21"
+ignore = "0.4.34"
+libc = "0.2.191"
+regex = "1.13.1"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = { version = "1.0.154", features = ["preserve_order"] }
+ureq = { version = "2.12.1", default-features = false, features = ["tls"] }
+similar = "3.2.1"
+
+[dev-dependencies]
+tempfile = "3.27.0"

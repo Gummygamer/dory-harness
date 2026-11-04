@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/dory-sys", "crates/dory-engine", "crates/dory-agent", "crates/dory-app", "crates/dory-gui", "crates/dory-cli", "crates/dory-serve"]
+members = ["crates/rillwright-sys", "crates/rillwright-engine", "crates/rillwright-agent", "crates/rillwright-app", "crates/rillwright-gui", "crates/rillwright-cli", "crates/rillwright-serve"]
 
 # Hashing the 3.6 GB model is far too slow unoptimized; optimize dependencies in dev builds.
 [profile.dev.package."*"]

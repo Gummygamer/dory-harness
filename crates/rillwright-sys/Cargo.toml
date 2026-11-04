@@ -1,0 +1,11 @@
+[package]
+name = "rillwright-sys"
+version = "0.1.0"
+edition = "2024"
+# `links` lets dependents read the library directory via DEP_LLAMA_LIB_DIR.
+links = "llama"
+
+[dependencies]
+
+[build-dependencies]
+bindgen = "0.73.2"

@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # Plan step 18: end-to-end agent acceptance on fixture workspaces. Needs the GPU and the model.
-# Each case gets a fresh fixture under target/, runs `dory-cli agent --json`, and checks the files
+# Each case gets a fresh fixture under target/, runs `rillwright agent --json`, and checks the files
 # that result and the JSON events, not only the model's words. Failures are listed at the end.
 # Usage: scripts/agent_acceptance.sh        (BIN overrides the binary; KEEP=1 keeps the work folder)
 set -uo pipefail
 cd "$(dirname "$0")/.." || exit 2
-BIN="${BIN:-target/release/dory-cli}"
+BIN="${BIN:-target/release/rillwright}"
 WORK="$(mktemp -d "$PWD/target/agent-acceptance.XXXXXX")"
 TIMEOUT="${TIMEOUT:-900}"
 fail=0
@@ -145,13 +145,13 @@ case_run read_only_refuses "Create out.txt containing the letter x." read-only
 mkdir -p "$WORK/outside_workspace_refused" && echo "placeholder" > "$WORK/outside_workspace_refused/README.md"
 case_run outside_workspace_refused "Show me the contents of /etc/passwd." ask
 
-# The web case runs the debug build: only a debug build reads DORY_WEB_BASE_URL, so a release build
+# The web case runs the debug build: only a debug build reads RILLWRIGHT_WEB_BASE_URL, so a release build
 # would send the fake key to the real service. It talks to a fake Tavily on loopback, and spends nothing.
-WEB_BIN="${WEB_BIN:-target/debug/dory-cli}"
+WEB_BIN="${WEB_BIN:-target/debug/rillwright}"
 if wanted web_search_answer; then
   echo "== web_search_answer"
   if [ ! -x "$WEB_BIN" ]; then
-    echo "FAIL web_search_answer ($WEB_BIN is missing; build it with cargo build -p dory-cli)"; results+=("FAIL web_search_answer"); fail=1
+    echo "FAIL web_search_answer ($WEB_BIN is missing; build it with cargo build -p rillwright-cli)"; results+=("FAIL web_search_answer"); fail=1
   else
     mkdir -p "$WORK/web_search_answer" && echo "# notes" > "$WORK/web_search_answer/README.md"
     printf '%s' '{"rules":[{"contains":["quillfeed"],"results":[{"title":"Quillfeed changelog","url":"https://quillfeed.example/changelog","content":"3.4.0: added the retry_after option to the client."}]}]}' > "$WORK/web_table.json"
@@ -159,7 +159,7 @@ if wanted web_search_answer; then
     fake_pid=$!
     for _ in $(seq 50); do [ -s "$WORK/fake_base.txt" ] && break; sleep 0.1; done
     timeout "$TIMEOUT" env -u TAVILY_API_KEY -u BRAVE_SEARCH_API_KEY TAVILY_API_KEY=tvly-fake-eval-key-0000 \
-      DORY_WEB_BASE_URL="$(head -n1 "$WORK/fake_base.txt")" "$WEB_BIN" agent "Which release of Quillfeed added the retry_after option? Search the web and answer with the version number." \
+      RILLWRIGHT_WEB_BASE_URL="$(head -n1 "$WORK/fake_base.txt")" "$WEB_BIN" agent "Which release of Quillfeed added the retry_after option? Search the web and answer with the version number." \
       --workspace "$WORK/web_search_answer" --permission auto-edit --allow-web --max-rounds 10 --json \
       > "$WORK/web_search_answer.jsonl" 2> "$WORK/web_search_answer.err"
     code=$?

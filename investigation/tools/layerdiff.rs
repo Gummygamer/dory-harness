@@ -1,5 +1,5 @@
 // SCRATCH: per-layer hidden state comparison across prompt chunkings.
-use dory_sys::*;
+use rillwright_sys::*;
 use std::{collections::BTreeMap, ffi::{CStr, CString, c_char, c_void}};
 #[link(name = "ggml-base")]
 unsafe extern "C" {

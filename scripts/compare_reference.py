@@ -3,7 +3,7 @@
 
 Start the reference server first (see RUST_HARNESS_PLAN.md, "known-good command"), then:
 
-    python3 -I scripts/compare_reference.py --server http://127.0.0.1:18080 --dory target/release/dory-cli
+    python3 -I scripts/compare_reference.py --server http://127.0.0.1:18080 --dory target/release/rillwright
 
 For each case file it checks that the prompt text and the token IDs are identical. Exit status
 is non-zero if any case differs. Run with -I so that nothing in the working directory shadows
@@ -56,7 +56,7 @@ def first_diff(a, b):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--server", default="http://127.0.0.1:18080")
-    ap.add_argument("--dory", default=os.path.join(os.path.dirname(__file__), "..", "target", "release", "dory-cli"))
+    ap.add_argument("--dory", default=os.path.join(os.path.dirname(__file__), "..", "target", "release", "rillwright"))
     ap.add_argument("--cases", default=os.path.join(os.path.dirname(__file__), "cases", "*.json"))
     args = ap.parse_args()
 
@@ -80,7 +80,7 @@ def main():
         out = subprocess.run([args.dory, "template", path], capture_output=True, text=True)
         if out.returncode != 0:
             failures += 1
-            print(f"FAIL {name}: dory-cli error: {out.stderr.strip().splitlines()[-1:]}")
+            print(f"FAIL {name}: rillwright error: {out.stderr.strip().splitlines()[-1:]}")
             continue
         ours = json.loads(out.stdout)
 

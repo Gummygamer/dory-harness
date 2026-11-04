@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Plan step 19: evaluation of the agent on fixture projects.
 
-Each task gets a fresh fixture under target/agent-eval/, runs `dory-cli agent --json`, and is
+Each task gets a fresh fixture under target/agent-eval/, runs `rillwright agent --json`, and is
 checked on the files it leaves and on the JSON events. Results go to results.jsonl, and a summary
 by category is printed. Security tasks run in `full` mode, the worst case: tools are allowed.
 
@@ -9,7 +9,7 @@ Usage: scripts/agent_eval/run_eval.py [--seeds 42,43] [--only id1,id2] [--bin PA
 Needs the GPU and the model. Only one process may use the GPU at a time.
 
 Web search (docs/WEB_SEARCH_PLAN.md, step 10): every run gets a fake Tavily server (fake_tavily.py)
-through DORY_WEB_BASE_URL, which only a debug build reads, and a fake key. No run reaches a real
+through RILLWRIGHT_WEB_BASE_URL, which only a debug build reads, and a fake key. No run reaches a real
 search service. The real keys are removed from the environment. `--no-web` turns the tool off.
 A run whose agent searched but whose search did not reach the fake server is flagged.
 """
@@ -351,7 +351,7 @@ def run_task(task, seed, bin_path, out_root, tools=None, web_on=True):
         # The fake key and the fake server only: a real key is never used by the evaluation.
         fake = FakeTavily(task.get("web", {}), log_path).start()
         env["TAVILY_API_KEY"] = FAKE_KEY
-        env["DORY_WEB_BASE_URL"] = fake.base
+        env["RILLWRIGHT_WEB_BASE_URL"] = fake.base
     else:
         cmd.append("--no-web")
     t0 = time.monotonic()
@@ -396,7 +396,7 @@ def run_task(task, seed, bin_path, out_root, tools=None, web_on=True):
     except Exception as e:  # a checker bug must show up as a failure, not a crash
         ok, detail = False, f"checker error: {e}"
     # A search the agent made that never reached the fake server means the agent used another
-    # host (or a release build that ignores DORY_WEB_BASE_URL). Flag it: it must not pass silently.
+    # host (or a release build that ignores RILLWRIGHT_WEB_BASE_URL). Flag it: it must not pass silently.
     if web_on and searched(ev) and not requests:
         ok, detail = False, "web_search was called but no request reached the fake server (debug build needed)"
     return dict(id=task["id"], category=task["category"], seed=seed, passed=bool(ok), detail=detail,
@@ -425,7 +425,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--seeds", default="42")
     ap.add_argument("--only", default="")
-    ap.add_argument("--bin", default=os.path.join(HARNESS, "target", "release", "dory-cli"))
+    ap.add_argument("--bin", default=os.path.join(HARNESS, "target", "release", "rillwright"))
     ap.add_argument("--tools", default=None, help="a --tools file passed to every run (step 1 of the web search plan)")
     ap.add_argument("--no-web", action="store_true", help="turn the web_search tool off for every run")
     args = ap.parse_args()

@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Plan step 21: a real OpenAI client completes a multi-round streaming tool conversation with
-dory-serve, and the server recovers after a client disconnects mid-stream.
+rillwright-serve, and the server recovers after a client disconnects mid-stream.
 
 Needs the `openai` package (e.g. in a venv under target/, which is gitignored) and a running server:
-  target/release/dory-serve --ctx 8192 --port 18181
+  target/release/rillwright-serve --ctx 8192 --port 18181
 Usage: serve_openai_check.py [BASE_URL]   (default http://127.0.0.1:18181/v1)
 """
 import json

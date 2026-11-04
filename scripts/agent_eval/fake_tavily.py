@@ -3,7 +3,7 @@
 It runs on a free loopback port, answers `POST /search` in Tavily's response format from a
 per-task table, and logs every request (query, count, whether the bearer token was right) to a
 JSONL file the checker reads. It spends no credits and changes nothing between runs. The agent
-reaches it through `DORY_WEB_BASE_URL`, which only debug builds read.
+reaches it through `RILLWRIGHT_WEB_BASE_URL`, which only debug builds read.
 
 Table format (a dict):
   "default":        results for a query that no rule matches (may be empty)

@@ -999,105 +999,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "dory-agent"
-version = "0.1.0"
-dependencies = [
- "dory-engine",
- "dory-sys",
- "globset",
- "ignore",
- "libc",
- "regex",
- "serde",
- "serde_json",
- "similar",
- "tempfile",
- "ureq",
-]
-
-[[package]]
-name = "dory-app"
-version = "0.1.0"
-dependencies = [
- "dory-agent",
- "dory-engine",
- "dory-sys",
- "serde",
- "serde_json",
- "tempfile",
-]
-
-[[package]]
-name = "dory-cli"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "clap",
- "ctrlc",
- "dory-agent",
- "dory-app",
- "dory-engine",
- "dory-sys",
- "serde",
- "serde_json",
- "tracing",
- "tracing-subscriber",
-]
-
-[[package]]
-name = "dory-engine"
-version = "0.1.0"
-dependencies = [
- "dory-sys",
- "serde",
- "serde_json",
- "sha2",
- "thiserror 2.0.21",
- "tracing",
-]
-
-[[package]]
-name = "dory-gui"
-version = "0.1.0"
-dependencies = [
- "dory-agent",
- "dory-app",
- "dory-engine",
- "dory-sys",
- "eframe",
- "rfd",
- "serde",
- "serde_json",
- "tempfile",
-]
-
-[[package]]
-name = "dory-serve"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "axum",
- "clap",
- "dory-agent",
- "dory-engine",
- "dory-sys",
- "futures",
- "serde",
- "serde_json",
- "tokio",
- "tokio-stream",
- "tracing",
- "tracing-subscriber",
-]
-
-[[package]]
-name = "dory-sys"
-version = "0.1.0"
-dependencies = [
- "bindgen",
-]
-
-[[package]]
 name = "downcast-rs"
 version = "1.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3198,6 +3099,107 @@ dependencies = [
  "wayland-protocols",
  "web-sys",
  "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "rillwright-agent"
+version = "0.1.0"
+dependencies = [
+ "globset",
+ "ignore",
+ "libc",
+ "regex",
+ "rillwright-engine",
+ "rillwright-sys",
+ "serde",
+ "serde_json",
+ "similar",
+ "tempfile",
+ "ureq",
+]
+
+[[package]]
+name = "rillwright-app"
+version = "0.1.0"
+dependencies = [
+ "rillwright-agent",
+ "rillwright-engine",
+ "rillwright-sys",
+ "serde",
+ "serde_json",
+ "tempfile",
+]
+
+[[package]]
+name = "rillwright-cli"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "ctrlc",
+ "rillwright-agent",
+ "rillwright-app",
+ "rillwright-engine",
+ "rillwright-sys",
+ "serde",
+ "serde_json",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "rillwright-engine"
+version = "0.1.0"
+dependencies = [
+ "rillwright-sys",
+ "serde",
+ "serde_json",
+ "sha2",
+ "thiserror 2.0.21",
+ "tracing",
+]
+
+[[package]]
+name = "rillwright-gui"
+version = "0.1.0"
+dependencies = [
+ "eframe",
+ "image",
+ "rfd",
+ "rillwright-agent",
+ "rillwright-app",
+ "rillwright-engine",
+ "rillwright-sys",
+ "serde",
+ "serde_json",
+ "tempfile",
+]
+
+[[package]]
+name = "rillwright-serve"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "axum",
+ "clap",
+ "futures",
+ "rillwright-agent",
+ "rillwright-app",
+ "rillwright-engine",
+ "rillwright-sys",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tokio-stream",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "rillwright-sys"
+version = "0.1.0"
+dependencies = [
+ "bindgen",
 ]
 
 [[package]]

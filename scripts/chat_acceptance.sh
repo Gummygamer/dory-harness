@@ -11,7 +11,7 @@
 #    not failed. Prefix reuse is off by default.
 set -uo pipefail
 cd "$(dirname "$0")/.." || exit 2
-BIN="${BIN:-target/release/dory-cli}"
+BIN="${BIN:-target/release/rillwright}"
 TMP=$(mktemp -d)
 fail=0
 TURNS=$'What is the weather in Lisbon?\nAnd in Porto?\n/exit\n'

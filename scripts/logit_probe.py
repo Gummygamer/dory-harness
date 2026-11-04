@@ -68,7 +68,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("phase", choices=["collect", "check"])
     ap.add_argument("--server", default="http://127.0.0.1:18080")
-    ap.add_argument("--dory", default=os.path.join(HERE, "..", "target", "release", "dory-cli"))
+    ap.add_argument("--dory", default=os.path.join(HERE, "..", "target", "release", "rillwright"))
     ap.add_argument("--outdir", required=True)
     args, rest = ap.parse_known_args()
     args.dory_flags = rest

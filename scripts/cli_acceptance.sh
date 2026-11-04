@@ -3,7 +3,7 @@
 # Needs the GPU and the model. Run from anywhere; it changes into the harness directory.
 set -uo pipefail
 cd "$(dirname "$0")/.." || exit 2
-BIN="${BIN:-target/release/dory-cli}"
+BIN="${BIN:-target/release/rillwright}"
 fail=0
 check() { # name, condition-result, detail
   if [ "$2" = yes ]; then echo "ok   $1"; else echo "FAIL $1: $3"; fail=1; fi

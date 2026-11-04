@@ -8,7 +8,8 @@
 set -uo pipefail
 HERE="$(cd "$(dirname "$0")/.." && pwd)"
 SERVER="${LLAMA_SERVER:?set LLAMA_SERVER to the llama-server binary}"
-MODEL="${DORY_MODEL:?set DORY_MODEL to the GGUF file}"
+MODEL="${RILLWRIGHT_MODEL:-${DORY_MODEL:-}}"
+[[ -n "$MODEL" ]] || { echo "set RILLWRIGHT_MODEL (legacy DORY_MODEL) to the GGUF file" >&2; exit 2; }
 MAXTOK="${1:-600}"
 OUT="${OUT:-$HERE/../matrix}"   # kept next to the harness, on the big drive
 mkdir -p "$OUT"
@@ -35,7 +36,7 @@ for cfg in "${configs[@]}"; do
   killall llama-server 2>/dev/null; sleep 4
   if [ "$up" = yes ]; then
     python3 -I "$HERE/scripts/compare_generation.py" check --outdir "$dir" --max-tokens "$MAXTOK" \
-      --loops "$loops" --cache-mode "$mode" --top-logprobs 5 --ctx 8192 --dory "$HERE/target/release/dory-cli"
+      --loops "$loops" --cache-mode "$mode" --top-logprobs 5 --ctx 8192 --dory "$HERE/target/release/rillwright"
   fi
 done
 echo MATRIX_DONE

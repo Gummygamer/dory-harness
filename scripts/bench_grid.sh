@@ -4,7 +4,7 @@
 # A row that cannot allocate (for example 128K) is reported as FAILED, not treated as a crash.
 set -uo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
-BIN="${BIN:-$HERE/../target/release/dory-cli}"
+BIN="${BIN:-$HERE/../target/release/rillwright}"
 PROMPT_TOKENS="${PROMPT_TOKENS:-512}"
 GEN_TOKENS="${GEN_TOKENS:-128}"
 
